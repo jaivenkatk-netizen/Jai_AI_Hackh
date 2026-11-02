@@ -28,3 +28,6 @@ web/.vite/
 # dev server logs
 data/_*.log
 data/_*.err
+
+# large local archives - never commit (GitHub rejects >100MB files)
+*.zip
