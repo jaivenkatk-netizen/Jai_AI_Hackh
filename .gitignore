@@ -5,17 +5,32 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# data artefacts are regenerable from a frozen seed
+# Data policy: commit the RESULTS, exclude the bulk.
+#
+# The result and reference tables (~3MB) are committed so the repo is
+# inspectable without running anything - a reader can open recommendations,
+# component_ttm or stock_positions and check the numbers in the README.
+#
+# The bulk is excluded because it cannot or should not be here:
+#   telemetry_daily.parquet  182MB - over GitHub's 100MB hard reject limit
+#   servicesense.duckdb      232MB - same, and fully derived from the above
+#   train_snapshots          45MB  \ regenerable intermediates; no reader
+#   asset_features           27MB  - needs them to verify a result
+#   data/raw/                76MB  - third-party public data that re-downloads
+# All of it regenerates deterministically from the frozen seed via
+# `python -m pipeline.build_all`.
 data/raw/*
 !data/raw/.gitkeep
-data/synthetic/*
-!data/synthetic/.gitkeep
 data/*.duckdb
 data/*.duckdb.wal
 data/*.json
 
-# models
-models/artifacts/
+data/synthetic/telemetry_daily.parquet
+data/synthetic/telemetry_hourly.parquet
+data/synthetic/train_snapshots.parquet
+data/synthetic/asset_features.parquet
+data/synthetic/pdm_daily.parquet
+data/synthetic/pdm_train.parquet
 
 # web
 web/node_modules/

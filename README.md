@@ -65,3 +65,34 @@ The **Microsoft/Azure Predictive Maintenance** set (100 machines, 876k telemetry
 rows, 761 failures, 77% censoring) validates the same survival pipeline on real
 component-level failure history. It is not HVAC, and the pitch says so - its job
 is to show the method holds on real censored data.
+
+## What's committed vs regenerated
+
+The repo carries the **results**, not the bulk, so you can inspect real numbers
+without running anything:
+
+```python
+import pandas as pd
+pd.read_parquet("data/synthetic/recommendations.parquet")   # the 121 cards
+pd.read_parquet("data/synthetic/component_ttm.parquet")     # P10/P50/P90 per component
+pd.read_parquet("data/synthetic/stock_positions.parquet")   # reorder points, excess
+pd.read_parquet("models/artifacts/eval_by_type.parquet")    # per-type honesty table
+```
+
+`models/artifacts/` also holds the **trained model** (`survival_xgb.json`) plus
+its calibration, so the reported scores are verifiable without a refit.
+
+Excluded, and why:
+
+| Not committed | Size | Reason |
+|---|---|---|
+| `data/servicesense.duckdb` | 232 MB | Over GitHub's 100 MB per-file hard limit; fully derived |
+| `data/synthetic/telemetry_daily.parquet` | 182 MB | Same |
+| `train_snapshots`, `asset_features` | 72 MB | Regenerable intermediates |
+| `data/raw/azure_pdm/` | 76 MB | Third-party public data; `sim/azure_pdm.py` re-downloads it |
+
+All of it rebuilds deterministically from the frozen seed:
+
+```powershell
+.\run_demo.ps1 -Rebuild     # ~6 min, then the UI is live
+```

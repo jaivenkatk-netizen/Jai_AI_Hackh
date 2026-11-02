@@ -1,0 +1,100 @@
+{
+  "belt": {
+    "lambda": 732.0229938091916,
+    "k": 1.9177187484797493,
+    "n_lives": 738,
+    "n_events": 489,
+    "median_life_days": 604.6759537981973
+  },
+  "condenser_coil": {
+    "lambda": 2796.783965176529,
+    "k": 1.915143236194546,
+    "n_lives": 437,
+    "n_events": 57,
+    "median_life_days": 2309.645220409483
+  },
+  "condenser_fan_motor": {
+    "lambda": 5082.098786200182,
+    "k": 1.653957077152015,
+    "n_lives": 387,
+    "n_events": 24,
+    "median_life_days": 4071.96922733233
+  },
+  "contactor": {
+    "lambda": 543.027396858068,
+    "k": 2.2171837416285918,
+    "n_lives": 1939,
+    "n_events": 1440,
+    "median_life_days": 460.2888185680712
+  },
+  "control_board": {
+    "lambda": 4324.949471161719,
+    "k": 1.7713262099582936,
+    "n_lives": 455,
+    "n_events": 31,
+    "median_life_days": 3516.569869775211
+  },
+  "damper_actuator": {
+    "lambda": 1455.5426645823238,
+    "k": 1.7579011741736155,
+    "n_lives": 134,
+    "n_events": 49,
+    "median_life_days": 1181.6174094884047
+  },
+  "eev": {
+    "lambda": 4760.380463202257,
+    "k": 1.7521194013893706,
+    "n_lives": 284,
+    "n_events": 17,
+    "median_life_days": 3861.8447272148505
+  },
+  "evap_blower_motor": {
+    "lambda": 3133.1184009573944,
+    "k": 3.398920487699378,
+    "n_lives": 350,
+    "n_events": 10,
+    "median_life_days": 2812.8456222695613
+  },
+  "fan_bearing": {
+    "lambda": 2018.6390897427848,
+    "k": 2.3154633216582305,
+    "n_lives": 571,
+    "n_events": 106,
+    "median_life_days": 1723.1160870571953
+  },
+  "filter": {
+    "lambda": 213.7115132325618,
+    "k": 1.8966250442962882,
+    "n_lives": 4792,
+    "n_events": 4294,
+    "median_life_days": 176.15816215911994
+  },
+  "refrigerant_circuit": {
+    "lambda": 1995.1272413353788,
+    "k": 1.3033405481118807,
+    "n_lives": 563,
+    "n_events": 175,
+    "median_life_days": 1506.060687301461
+  },
+  "run_capacitor": {
+    "lambda": 978.8345018653688,
+    "k": 2.179745456281559,
+    "n_lives": 746,
+    "n_events": 403,
+    "median_life_days": 827.341670369694
+  },
+  "vfd": {
+    "lambda": 3604.966273046878,
+    "k": 1.8018387365400186,
+    "n_lives": 154,
+    "n_events": 14,
+    "median_life_days": 2941.447813872486
+  },
+  "__global__": {
+    "lambda": 805.3265796491029,
+    "k": 0.9673503721650991,
+    "n_lives": 12068,
+    "n_events": 7116,
+    "median_life_days": 551.3471043051915
+  }
+}
