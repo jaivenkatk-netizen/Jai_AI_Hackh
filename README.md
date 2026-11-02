@@ -96,3 +96,24 @@ All of it rebuilds deterministically from the frozen seed:
 ```powershell
 .\run_demo.ps1 -Rebuild     # ~6 min, then the UI is live
 ```
+
+### Or skip the rebuild
+
+The prebuilt database is published as a **GitHub Release asset** — Release
+assets allow up to 2 GB each, unlike the 100 MB per-file limit on committed
+files:
+
+1. Download `servicesense.duckdb` from the latest release into `data/`
+2. `.\run_demo.ps1` — no `-Rebuild` flag
+3. Open <http://localhost:5173/>
+
+To publish or refresh that release:
+
+```powershell
+.\publish_release.ps1          # the database only (~232 MB)
+.\publish_release.ps1 -Full    # plus the heavy parquets, to re-run features
+```
+
+It is idempotent — re-running replaces the assets on an existing tag rather
+than failing — and refuses early with a clear message if `gh` is not
+authenticated or the artefacts have not been built yet.
