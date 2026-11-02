@@ -24,3 +24,7 @@ web/.vite/
 
 # demo recordings
 *.mp4
+
+# dev server logs
+data/_*.log
+data/_*.err
