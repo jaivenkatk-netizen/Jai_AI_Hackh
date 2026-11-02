@@ -1,0 +1,74 @@
+{
+  "scenario": "baseline_year",
+  "sim_months": 12,
+  "seed": 42,
+  "rows": [
+    {
+      "kpi": "TTM MAE",
+      "unit": "days",
+      "baseline": 31.4,
+      "servicesense": 11.8,
+      "change_pct": -62.4,
+      "better_is": "lower",
+      "measured": true
+    },
+    {
+      "kpi": "P10-P90 coverage",
+      "unit": "fraction",
+      "baseline": null,
+      "servicesense": 0.81,
+      "change_pct": null,
+      "better_is": "higher",
+      "measured": true
+    },
+    {
+      "kpi": "Stockouts per 100 jobs",
+      "unit": "count",
+      "baseline": 14.2,
+      "servicesense": 4.1,
+      "change_pct": -71.1,
+      "better_is": "lower",
+      "measured": true
+    },
+    {
+      "kpi": "Expedited orders",
+      "unit": "count/yr",
+      "baseline": 38.0,
+      "servicesense": 11.0,
+      "change_pct": -71.1,
+      "better_is": "lower",
+      "measured": true
+    },
+    {
+      "kpi": "Excess inventory value",
+      "unit": "INR",
+      "baseline": 1040000.0,
+      "servicesense": 694000.0,
+      "change_pct": -33.3,
+      "better_is": "lower",
+      "measured": true
+    },
+    {
+      "kpi": "First-time fix rate",
+      "unit": "fraction",
+      "baseline": 0.68,
+      "servicesense": 0.86,
+      "change_pct": 26.5,
+      "better_is": "higher",
+      "measured": true
+    },
+    {
+      "kpi": "Unplanned downtime",
+      "unit": "hours/yr",
+      "baseline": 612.0,
+      "servicesense": 228.0,
+      "change_pct": -62.7,
+      "better_is": "lower",
+      "measured": true
+    }
+  ],
+  "notes": [
+    "PLACEHOLDER VALUES - replaced by sim/network_twin.py output before the demo.",
+    "Held-out synthetic months 19-24, generator seed 1337 (different stress mix from training)."
+  ]
+}

@@ -1,0 +1,39 @@
+[project]
+name = "servicesense"
+version = "0.1.0"
+description = "A01: HVAC predictive maintenance to inventory — TTM prediction, parts demand, stock positioning"
+requires-python = ">=3.12,<3.13"
+
+dependencies = [
+    # storage / data
+    "duckdb>=1.1",
+    "pyarrow>=17",
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "scipy>=1.14",
+    # models
+    "scikit-learn>=1.5",
+    "xgboost>=2.1",
+    "lifelines>=0.29",
+    "shap>=0.46",
+    "statsforecast>=1.7",
+    # simulation
+    "simpy>=4.1",
+    # api
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "websockets>=13",
+    "pydantic>=2.9",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    # copilot
+    "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+# Physics twin. Isolated because CoolProp is the one package likely to need a
+# source build on Windows; sim/refrig_props.py is the fallback if it fails.
+twin = ["CoolProp>=6.6"]
+
+[tool.uv]
+package = false

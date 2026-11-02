@@ -1,0 +1,158 @@
+{
+  "as_of_date": "2026-11-03",
+  "rows": [
+    {
+      "part_no": "CMP-5T-R32",
+      "description": "Compressor assembly, 5 ton, R32",
+      "hub_id": "HUB-BLR",
+      "bucket": "urgent",
+      "criticality": "A",
+      "unit_cost": 94500.0,
+      "demand": {
+        "p10": 1.0,
+        "p50": 2.0,
+        "p90": 3.0,
+        "mean": 2.1,
+        "draws": 1000
+      },
+      "on_hand": 1,
+      "on_order": 0,
+      "reserved": 1,
+      "contributing_assets": [
+        "CH-117",
+        "CH-091",
+        "CH-144"
+      ],
+      "contributing_failure_modes": [
+        "mechanical_wear",
+        "burnout"
+      ]
+    },
+    {
+      "part_no": "FD-34-R32",
+      "description": "Filter-drier, 3/4 in, R32",
+      "hub_id": "HUB-BLR",
+      "bucket": "urgent",
+      "criticality": "B",
+      "unit_cost": 2150.0,
+      "demand": {
+        "p10": 1.0,
+        "p50": 2.0,
+        "p90": 3.0,
+        "mean": 2.0,
+        "draws": 1000
+      },
+      "on_hand": 6,
+      "on_order": 0,
+      "reserved": 2,
+      "contributing_assets": [
+        "CH-117",
+        "CH-091",
+        "CH-144"
+      ],
+      "contributing_failure_modes": [
+        "mechanical_wear",
+        "burnout"
+      ]
+    },
+    {
+      "part_no": "CNT-3P-40A",
+      "description": "Contactor, 3-pole, 40 A",
+      "hub_id": "HUB-PNQ",
+      "bucket": "urgent",
+      "criticality": "B",
+      "unit_cost": 1480.0,
+      "demand": {
+        "p10": 4.0,
+        "p50": 6.0,
+        "p90": 9.0,
+        "mean": 6.2,
+        "draws": 1000
+      },
+      "on_hand": 2,
+      "on_order": 0,
+      "reserved": 0,
+      "contributing_assets": [
+        "RTU-118",
+        "RTU-131",
+        "VRF-312",
+        "RTU-155",
+        "AHU-077"
+      ],
+      "contributing_failure_modes": [
+        "contactor_pitting",
+        "mechanical_wear"
+      ]
+    },
+    {
+      "part_no": "REF-R32-KG",
+      "description": "Refrigerant R32 (kg)",
+      "hub_id": "HUB-BLR",
+      "bucket": "planned",
+      "criticality": "B",
+      "unit_cost": 1120.0,
+      "demand": {
+        "p10": 12.0,
+        "p50": 22.5,
+        "p90": 36.0,
+        "mean": 23.4,
+        "draws": 1000
+      },
+      "on_hand": 40,
+      "on_order": 0,
+      "reserved": 4,
+      "contributing_assets": [
+        "CH-117",
+        "CH-091",
+        "VRF-312"
+      ],
+      "contributing_failure_modes": [
+        "mechanical_wear",
+        "refrigerant_leak"
+      ]
+    }
+  ],
+  "van_kits": [
+    {
+      "job_id": "WO-1042",
+      "asset_id": "CH-117",
+      "component_type": "compressor",
+      "failure_mode": "mechanical_wear",
+      "items": [
+        {
+          "part_no": "CMP-5T-R32",
+          "description": "Compressor assembly, 5 ton, R32",
+          "qty": 1.0,
+          "p_used": 1.0,
+          "reason": "primary",
+          "on_hand_at_hub": 1
+        },
+        {
+          "part_no": "FD-34-R32",
+          "description": "Filter-drier, 3/4 in, R32",
+          "qty": 1.0,
+          "p_used": 0.95,
+          "reason": "primary",
+          "on_hand_at_hub": 6
+        },
+        {
+          "part_no": "REF-R32-KG",
+          "description": "Refrigerant R32 (kg)",
+          "qty": 4.5,
+          "p_used": 1.0,
+          "reason": "primary",
+          "on_hand_at_hub": 40
+        },
+        {
+          "part_no": "CNT-3P-40A",
+          "description": "Contactor, 3-pole, 40 A",
+          "qty": 1.0,
+          "p_used": 0.4,
+          "reason": "cheap_high_probability_extra",
+          "on_hand_at_hub": 5
+        }
+      ],
+      "expected_first_time_fix": 0.93
+    }
+  ]
+}

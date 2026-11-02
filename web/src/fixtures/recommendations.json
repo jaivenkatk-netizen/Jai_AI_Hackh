@@ -1,0 +1,128 @@
+{
+  "as_of_date": "2026-11-03",
+  "cards": [
+    {
+      "rec_id": "REC-0001",
+      "action": "transfer",
+      "part_no": "CMP-5T-R32",
+      "description": "Compressor assembly, 5 ton, R32",
+      "qty": 2.0,
+      "from_hub_id": "HUB-MAA",
+      "to_hub_id": "HUB-BLR",
+      "need_by": "2026-11-06",
+      "why": "3 urgent jobs at Bengaluru sites need a compressor by 6 Nov; only 1 is on hand. Supplier lead time of 21 days is past the need date, so a normal PO cannot make it. Chennai holds 5 against a P90 need of 2, so transferring 2 covers Bengaluru without putting Chennai at risk - and avoids one expedited order.",
+      "evidence": [
+        "P(fail <= 14 d) = 0.62 on CH-117, 0.48 on CH-091, 0.41 on CH-144",
+        "Bengaluru on hand: 1; P90 demand in 0-14 d: 3",
+        "Chennai on hand: 5; Chennai P90 need over the same window: 2",
+        "Supplier SUP-114 lead time 21 d (sd 4 d) > 3 d to need date",
+        "Transfer time Chennai -> Bengaluru: 2 d"
+      ],
+      "confidence": {
+        "level": "medium",
+        "interval_width_days": 10.191418234576744,
+        "data_quality": 0.543722597625459,
+        "ood_score": 0.4,
+        "reasons": [
+          "6% of readings imputed"
+        ]
+      },
+      "assumptions": [
+        {
+          "label": "Transfer time",
+          "text": "takes 2 days",
+          "basis": "hub distance matrix"
+        },
+        {
+          "label": "Duty cycle",
+          "text": "continues at current rate",
+          "basis": "trailing 30-day mean"
+        },
+        {
+          "label": "Data quality",
+          "text": "two of three assets have a 9-day telemetry gap",
+          "basis": "telemetry completeness check"
+        }
+      ],
+      "cost_delta": -31800.0,
+      "avoided_action": "expedite",
+      "status": "pending"
+    },
+    {
+      "rec_id": "REC-0002",
+      "action": "purchase",
+      "part_no": "CNT-3P-40A",
+      "description": "Contactor, 3-pole, 40 A",
+      "qty": 8.0,
+      "from_hub_id": null,
+      "to_hub_id": "HUB-PNQ",
+      "need_by": "2026-11-11",
+      "why": "Pune's P90 contactor demand over the next 14 days is 9 against 2 on hand. Supplier lead time is 6 days, which fits before the 11 Nov need date, so a normal PO is the cheapest option that meets the date. No hub has surplus above its own P90.",
+      "evidence": [
+        "Pune P90 demand 0-14 d: 9 units; on hand 2",
+        "Supplier SUP-032 lead time 6 d (sd 1.5 d) < 8 d to need date",
+        "No donor hub above its P90 need",
+        "Reorder point 7.4, safety stock 3.1 at 95% service level (class B)"
+      ],
+      "confidence": {
+        "level": "high",
+        "interval_width_days": 4.0,
+        "data_quality": 0.9,
+        "ood_score": 0.4,
+        "reasons": [
+          "Narrow band, fresh telemetry on all 5 contributing assets"
+        ]
+      },
+      "assumptions": [
+        {
+          "label": "MOQ",
+          "text": "supplier minimum order is 5 units",
+          "basis": "parts master"
+        }
+      ],
+      "cost_delta": 11840.0,
+      "avoided_action": null,
+      "status": "pending"
+    }
+  ],
+  "positions": [
+    {
+      "part_no": "CMP-5T-R32",
+      "description": "Compressor assembly, 5 ton, R32",
+      "hub_id": "HUB-BLR",
+      "criticality": "A",
+      "on_hand": 1,
+      "on_order": 0,
+      "reorder_point": 4.2,
+      "safety_stock": 2.1,
+      "projected_need_p50": 2.0,
+      "projected_need_p90": 3.0,
+      "lead_time_mean_d": 21.0,
+      "lead_time_sd_d": 4.0,
+      "service_level_target": 0.98,
+      "days_of_cover": 4.5,
+      "excess_units": 0.0,
+      "excess_value": 0.0
+    },
+    {
+      "part_no": "CMP-5T-R32",
+      "description": "Compressor assembly, 5 ton, R32",
+      "hub_id": "HUB-MAA",
+      "criticality": "A",
+      "on_hand": 5,
+      "on_order": 0,
+      "reorder_point": 3.1,
+      "safety_stock": 1.6,
+      "projected_need_p50": 1.0,
+      "projected_need_p90": 2.0,
+      "lead_time_mean_d": 21.0,
+      "lead_time_sd_d": 4.0,
+      "service_level_target": 0.98,
+      "days_of_cover": 96.0,
+      "excess_units": 3.0,
+      "excess_value": 283500.0
+    }
+  ],
+  "total_excess_value": 210200.0,
+  "expedites_avoided": 7
+}

@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* ServiceSense design tokens.
+
+   Three rules from the design brief, encoded here so screens can't drift:
+     1. Colour means HORIZON, never severity-in-general:
+        red = urgent (0-14 d), amber = planned (15-90 d), blue = forecast (90+ d).
+     2. Confidence has its own scale, distinct from horizon, so a low-confidence
+        urgent item reads as urgent-but-uncertain rather than as a new category.
+     3. Uncertainty is always visible - band fills and badges have real tokens
+        rather than ad-hoc opacities per chart. */
+@theme {
+  /* Horizon */
+  --color-urgent: oklch(0.58 0.21 25);
+  --color-urgent-soft: oklch(0.95 0.04 25);
+  --color-planned: oklch(0.72 0.16 72);
+  --color-planned-soft: oklch(0.96 0.05 80);
+  --color-forecast: oklch(0.60 0.14 250);
+  --color-forecast-soft: oklch(0.95 0.03 250);
+
+  /* Confidence */
+  --color-conf-high: oklch(0.62 0.15 150);
+  --color-conf-medium: oklch(0.73 0.15 85);
+  --color-conf-low: oklch(0.63 0.17 30);
+
+  /* Surfaces */
+  --color-ink: oklch(0.22 0.01 250);
+  --color-ink-soft: oklch(0.48 0.01 250);
+  --color-surface: oklch(1 0 0);
+  --color-surface-2: oklch(0.985 0.002 250);
+  --color-line: oklch(0.91 0.005 250);
+
+  /* Uncertainty band fill opacity, used by every chart */
+  --opacity-band: 0.18;
+}
+
+:root {
+  color-scheme: light;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-synthesis-weight: none;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  background: var(--color-surface-2);
+  color: var(--color-ink);
+}
+
+/* Tabular figures everywhere a number can change, so digits don't jitter as
+   the telemetry stream updates. */
+.num {
+  font-variant-numeric: tabular-nums;
+}

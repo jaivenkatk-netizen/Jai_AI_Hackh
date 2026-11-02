@@ -1,0 +1,26 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.pytest_cache/
+.ruff_cache/
+
+# data artefacts are regenerable from a frozen seed
+data/raw/*
+!data/raw/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+data/*.duckdb
+data/*.duckdb.wal
+data/*.json
+
+# models
+models/artifacts/
+
+# web
+web/node_modules/
+web/dist/
+web/.vite/
+
+# demo recordings
+*.mp4

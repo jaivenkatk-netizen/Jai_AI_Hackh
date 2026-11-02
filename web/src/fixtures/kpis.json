@@ -1,0 +1,241 @@
+{
+  "generated_at": "2026-11-03T08:30:00",
+  "as_of_date": "2026-11-03",
+  "tiles": [
+    {
+      "key": "assets_at_risk",
+      "label": "Assets at risk",
+      "value": 72.0,
+      "unit": "assets",
+      "delta_vs_baseline": null,
+      "tone": "warning",
+      "drill_filter": {
+        "bucket": "urgent"
+      }
+    },
+    {
+      "key": "urgent_jobs",
+      "label": "Urgent jobs (0-14 d)",
+      "value": 10.0,
+      "unit": "jobs",
+      "delta_vs_baseline": null,
+      "tone": "critical",
+      "drill_filter": {
+        "bucket": "urgent"
+      }
+    },
+    {
+      "key": "projected_stockouts",
+      "label": "Projected stockouts",
+      "value": 3.0,
+      "unit": "parts",
+      "delta_vs_baseline": -9.0,
+      "tone": "critical",
+      "drill_filter": {
+        "shortage": true
+      }
+    },
+    {
+      "key": "expedites_avoided",
+      "label": "Expedites avoided",
+      "value": 7.0,
+      "unit": "orders",
+      "delta_vs_baseline": 7.0,
+      "tone": "good",
+      "drill_filter": {
+        "action": "transfer"
+      }
+    },
+    {
+      "key": "excess_value",
+      "label": "Excess stock value",
+      "value": 210200.0,
+      "unit": "INR",
+      "delta_vs_baseline": -86400.0,
+      "tone": "neutral",
+      "drill_filter": {
+        "excess": true
+      }
+    }
+  ],
+  "hubs": [
+    {
+      "hub_id": "HUB-BLR",
+      "name": "Bengaluru",
+      "region": "South",
+      "lat": 12.97,
+      "lon": 77.59,
+      "assets_at_risk": 14,
+      "urgent_jobs": 3,
+      "projected_stockouts": 3,
+      "excess_value": 18400.0,
+      "risk_score": 0.92
+    },
+    {
+      "hub_id": "HUB-MAA",
+      "name": "Chennai",
+      "region": "South",
+      "lat": 13.08,
+      "lon": 80.27,
+      "assets_at_risk": 9,
+      "urgent_jobs": 1,
+      "projected_stockouts": 0,
+      "excess_value": 61200.0,
+      "risk_score": 0.41
+    },
+    {
+      "hub_id": "HUB-PNQ",
+      "name": "Pune",
+      "region": "West",
+      "lat": 18.52,
+      "lon": 73.86,
+      "assets_at_risk": 11,
+      "urgent_jobs": 2,
+      "projected_stockouts": 1,
+      "excess_value": 27500.0,
+      "risk_score": 0.63
+    },
+    {
+      "hub_id": "HUB-BOM",
+      "name": "Mumbai",
+      "region": "West",
+      "lat": 19.08,
+      "lon": 72.88,
+      "assets_at_risk": 7,
+      "urgent_jobs": 1,
+      "projected_stockouts": 0,
+      "excess_value": 33100.0,
+      "risk_score": 0.35
+    },
+    {
+      "hub_id": "HUB-DEL",
+      "name": "Delhi",
+      "region": "North",
+      "lat": 28.7,
+      "lon": 77.1,
+      "assets_at_risk": 12,
+      "urgent_jobs": 2,
+      "projected_stockouts": 1,
+      "excess_value": 22700.0,
+      "risk_score": 0.58
+    },
+    {
+      "hub_id": "HUB-HYD",
+      "name": "Hyderabad",
+      "region": "South",
+      "lat": 17.39,
+      "lon": 78.49,
+      "assets_at_risk": 6,
+      "urgent_jobs": 0,
+      "projected_stockouts": 0,
+      "excess_value": 15900.0,
+      "risk_score": 0.24
+    },
+    {
+      "hub_id": "HUB-AMD",
+      "name": "Ahmedabad",
+      "region": "West",
+      "lat": 23.02,
+      "lon": 72.57,
+      "assets_at_risk": 8,
+      "urgent_jobs": 1,
+      "projected_stockouts": 0,
+      "excess_value": 19300.0,
+      "risk_score": 0.44
+    },
+    {
+      "hub_id": "HUB-CCU",
+      "name": "Kolkata",
+      "region": "East",
+      "lat": 22.57,
+      "lon": 88.36,
+      "assets_at_risk": 5,
+      "urgent_jobs": 0,
+      "projected_stockouts": 0,
+      "excess_value": 12100.0,
+      "risk_score": 0.19
+    }
+  ],
+  "urgent_queue": [
+    {
+      "job_id": "WO-1042",
+      "asset_id": "CH-117",
+      "asset_label": "Chiller CH-117",
+      "site": "Prestige Tech Park",
+      "hub_id": "HUB-BLR",
+      "component_type": "compressor",
+      "failure_mode": "mechanical_wear",
+      "ttm": {
+        "p10_days": 5.26851396372373,
+        "p50_days": 9.025013499434122,
+        "p90_days": 15.459932198300473,
+        "sigma_log": 0.42
+      },
+      "p_fail_14d": 0.8520750630381411,
+      "confidence": {
+        "level": "medium",
+        "interval_width_days": 10.191418234576744,
+        "data_quality": 0.543722597625459,
+        "ood_score": 0.4,
+        "reasons": [
+          "6% of readings imputed"
+        ]
+      },
+      "parts_short": true
+    },
+    {
+      "job_id": "WO-1043",
+      "asset_id": "RTU-204",
+      "asset_label": "RTU-204",
+      "site": "Embassy Golf Links",
+      "hub_id": "HUB-BLR",
+      "component_type": "condenser_fan_motor",
+      "failure_mode": "bearing_failure",
+      "ttm": {
+        "p10_days": 7.337589664349062,
+        "p50_days": 11.941264417849103,
+        "p90_days": 19.433329256582102,
+        "sigma_log": 0.38
+      },
+      "p_fail_14d": 0.6622354925615443,
+      "confidence": {
+        "level": "high",
+        "interval_width_days": 9.1,
+        "data_quality": 0.91,
+        "ood_score": 0.4,
+        "reasons": [
+          "Narrow band, fresh telemetry"
+        ]
+      },
+      "parts_short": false
+    },
+    {
+      "job_id": "WO-1044",
+      "asset_id": "CH-091",
+      "asset_label": "Chiller CH-091",
+      "site": "Manyata Embassy",
+      "hub_id": "HUB-BLR",
+      "component_type": "compressor",
+      "failure_mode": "mechanical_wear",
+      "ttm": {
+        "p10_days": 7.520786830427652,
+        "p50_days": 13.735723585077926,
+        "p90_days": 25.08648452078753,
+        "sigma_log": 0.47
+      },
+      "p_fail_14d": 0.5161716845980996,
+      "confidence": {
+        "level": "medium",
+        "interval_width_days": 17.4,
+        "data_quality": 0.58,
+        "ood_score": 0.4,
+        "reasons": [
+          "9-day telemetry gap",
+          "6% of readings imputed"
+        ]
+      },
+      "parts_short": true
+    }
+  ],
+  "data_freshness_hours": 1.4
+}

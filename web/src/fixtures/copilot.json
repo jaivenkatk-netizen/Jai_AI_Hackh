@@ -1,0 +1,40 @@
+{
+  "answer": "Pune needs 6 contactors next week because five assets have a contactor-involving repair predicted inside 14 days: RTU-118 (P(fail) 0.58), RTU-131 (0.52), VRF-312 (0.44), RTU-155 (0.39) and AHU-077 (0.31). The compressor and fan-motor repair kits each carry a contactor at P(used) 0.40, which is what turns those five jobs into a P50 of 6 units and a P90 of 9. Pune holds 2 on hand, so the reorder point of 7.4 is breached. Supplier lead time is 6 days against an 11 Nov need date, so a normal PO covers it - no expedite needed.",
+  "traces": [
+    {
+      "tool_name": "get_parts_demand",
+      "arguments": {
+        "hub_id": "HUB-PNQ",
+        "part_no": "CNT-3P-40A",
+        "bucket": "urgent"
+      },
+      "result_summary": "P50 6.0, P90 9.0, on_hand 2, reorder_point 7.4",
+      "row_count": 1,
+      "duration_ms": 18.2,
+      "is_error": false
+    },
+    {
+      "tool_name": "get_fleet_risk",
+      "arguments": {
+        "hub_id": "HUB-PNQ",
+        "bucket": "urgent"
+      },
+      "result_summary": "5 assets with contactor-involving repair inside 14 d",
+      "row_count": 5,
+      "duration_ms": 24.7,
+      "is_error": false
+    },
+    {
+      "tool_name": "get_recommendations",
+      "arguments": {
+        "hub_id": "HUB-PNQ",
+        "part_no": "CNT-3P-40A"
+      },
+      "result_summary": "REC-0002 purchase 8 units, lead time 6 d fits need date",
+      "row_count": 1,
+      "duration_ms": 11.4,
+      "is_error": false
+    }
+  ],
+  "grounded": true
+}
