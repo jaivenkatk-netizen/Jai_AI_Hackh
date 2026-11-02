@@ -1,122 +1,89 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+// Shell. Holds the two pieces of cross-screen state that make the demo click
+// path work: the hub filter (set from the Command Center map, respected on
+// every screen) and the selected asset (which switches to the Asset Twin).
 
-function App() {
-  const [count, setCount] = useState(0)
+import { useState } from "react";
+
+import AssetTwin from "./screens/AssetTwin";
+import CommandCenter from "./screens/CommandCenter";
+import InventoryPlanner from "./screens/InventoryPlanner";
+import PartsDemand from "./screens/PartsDemand";
+
+type Screen = "command" | "parts" | "planner" | "asset";
+
+const NAV: { key: Screen; label: string; hint: string }[] = [
+  { key: "command", label: "Command Center", hint: "Fleet state and the urgent queue" },
+  { key: "parts", label: "Parts Demand", hint: "Failures translated into part numbers" },
+  { key: "planner", label: "Inventory Planner", hint: "Shortages turned into approvable actions" },
+];
+
+export default function App() {
+  const [screen, setScreen] = useState<Screen>("command");
+  const [hub, setHub] = useState<string | null>(null);
+  const [assetId, setAssetId] = useState<string | null>(null);
+
+  const openAsset = (id: string) => {
+    setAssetId(id);
+    setScreen("asset");
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <div className="min-h-screen">
+      <header
+        className="sticky top-0 z-10 px-4 py-2"
+        style={{ background: "var(--surface)", borderBottom: "1px solid var(--line)" }}
+      >
+        <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-4 gap-y-2">
+          <div className="flex items-baseline gap-2">
+            <span className="text-[14px] font-semibold tracking-tight">ServiceSense</span>
+            <span className="text-[11px]" style={{ color: "var(--muted)" }}>
+              A01 &middot; maintenance to inventory
+            </span>
+          </div>
+          <nav className="flex gap-1">
+            {NAV.map((n) => (
+              <button
+                key={n.key}
+                type="button"
+                title={n.hint}
+                onClick={() => setScreen(n.key)}
+                className="rounded px-2.5 py-1 text-[12px]"
+                style={{
+                  background: screen === n.key ? "var(--plane)" : "transparent",
+                  fontWeight: screen === n.key ? 600 : 400,
+                  boxShadow: screen === n.key ? "inset 0 -2px 0 0 var(--ink)" : undefined,
+                }}
+              >
+                {n.label}
+              </button>
+            ))}
+            {screen === "asset" && assetId && (
+              <span
+                className="num rounded px-2.5 py-1 text-[12px] font-semibold"
+                style={{ background: "var(--plane)", boxShadow: "inset 0 -2px 0 0 var(--ink)" }}
+              >
+                {assetId}
+              </span>
+            )}
+          </nav>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      <main className="mx-auto max-w-[1500px] p-4">
+        {screen === "command" && (
+          <CommandCenter
+            hub={hub}
+            setHub={setHub}
+            onOpenAsset={openAsset}
+            onGoto={(s) => setScreen(s)}
+          />
+        )}
+        {screen === "parts" && <PartsDemand hub={hub} setHub={setHub} onOpenAsset={openAsset} />}
+        {screen === "planner" && <InventoryPlanner hub={hub} setHub={setHub} />}
+        {screen === "asset" && assetId && (
+          <AssetTwin assetId={assetId} onBack={() => setScreen("command")} />
+        )}
+      </main>
+    </div>
+  );
 }
-
-export default App

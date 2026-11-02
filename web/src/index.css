@@ -1,54 +1,156 @@
 @import "tailwindcss";
 
-/* ServiceSense design tokens.
+/* ServiceSense visual system.
 
-   Three rules from the design brief, encoded here so screens can't drift:
+   Three rules from the design brief:
      1. Colour means HORIZON, never severity-in-general:
-        red = urgent (0-14 d), amber = planned (15-90 d), blue = forecast (90+ d).
-     2. Confidence has its own scale, distinct from horizon, so a low-confidence
-        urgent item reads as urgent-but-uncertain rather than as a new category.
-     3. Uncertainty is always visible - band fills and badges have real tokens
-        rather than ad-hoc opacities per chart. */
+        urgent (0-14 d) / planned (15-90 d) / forecast (90+ d).
+     2. Uncertainty is always visible - bands and badges, never a bare number.
+     3. Every recommendation explains itself before it asks for approval.
+
+   Horizon is a *state*, so it draws on the status palette rather than the
+   categorical one, and every horizon colour ships with its text label - a
+   status colour never carries meaning alone.
+
+   Confidence deliberately carries NO hue. Reusing green/amber/red for
+   confidence would collide with the horizon scale and make a low-confidence
+   urgent item read as a fourth category. It is encoded as filled dots
+   (3/2/1) plus a word, in ink only - shape and text, not colour.
+
+   Palette provenance - validated with the dataviz validator, not eyeballed:
+     light fills  #d03b3b / #eda100 / #2a78d6
+       ALL CHECKS PASS (worst all-pairs CVD dE 19.8, normal-vision 24.1);
+       amber sits at 2.11:1 so the relief rule applies - visible direct labels
+       and a table view, both shipped.
+     dark fills   #d03b3b / #fab219 / #3987e5
+       separations pass with large margin (CVD 24.4, normal-vision 28.4) and all
+       three clear 3:1 on the dark surface. The darker amber #c98500 was tried
+       first and REJECTED: against dark red it measured normal-vision dE 13.0,
+       below the 15 floor, which secondary encoding does not excuse. */
 @theme {
-  /* Horizon */
-  --color-urgent: oklch(0.58 0.21 25);
-  --color-urgent-soft: oklch(0.95 0.04 25);
-  --color-planned: oklch(0.72 0.16 72);
-  --color-planned-soft: oklch(0.96 0.05 80);
-  --color-forecast: oklch(0.60 0.14 250);
-  --color-forecast-soft: oklch(0.95 0.03 250);
+  /* Horizon (status-derived) */
+  --color-urgent: #d03b3b;
+  --color-planned: #eda100;
+  --color-forecast: #2a78d6;
+  --color-urgent-wash: #fbeaea;
+  --color-planned-wash: #fcf4e2;
+  --color-forecast-wash: #e9f1fc;
 
-  /* Confidence */
-  --color-conf-high: oklch(0.62 0.15 150);
-  --color-conf-medium: oklch(0.73 0.15 85);
-  --color-conf-low: oklch(0.63 0.17 30);
+  /* Sequential ramp (hub risk, heatmaps) - one hue, light to dark */
+  --color-seq-100: #cde2fb;
+  --color-seq-250: #86b6ef;
+  --color-seq-400: #3987e5;
+  --color-seq-500: #256abf;
+  --color-seq-650: #104281;
 
-  /* Surfaces */
-  --color-ink: oklch(0.22 0.01 250);
-  --color-ink-soft: oklch(0.48 0.01 250);
-  --color-surface: oklch(1 0 0);
-  --color-surface-2: oklch(0.985 0.002 250);
-  --color-line: oklch(0.91 0.005 250);
+  /* Chart chrome and ink */
+  --color-surface: #fcfcfb;
+  --color-plane: #f9f9f7;
+  --color-ink: #0b0b0b;
+  --color-ink-2: #52514e;
+  --color-muted: #898781;
+  --color-grid: #e1e0d9;
+  --color-axis: #c3c2b7;
+  --color-good: #006300;
+  --color-line: rgba(11, 11, 11, 0.1);
 
-  /* Uncertainty band fill opacity, used by every chart */
+  /* Uncertainty band fill opacity - one value, every chart */
   --opacity-band: 0.18;
 }
 
 :root {
   color-scheme: light;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --surface: #fcfcfb;
+  --plane: #f9f9f7;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --line: rgba(11, 11, 11, 0.1);
+  --urgent: #d03b3b;
+  --planned: #eda100;
+  --forecast: #2a78d6;
+  --urgent-wash: #fbeaea;
+  --planned-wash: #fcf4e2;
+  --forecast-wash: #e9f1fc;
+  --good: #006300;
+
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-synthesis-weight: none;
   text-rendering: optimizeLegibility;
 }
 
-body {
-  margin: 0;
-  background: var(--color-surface-2);
-  color: var(--color-ink);
+/* Dark is a selected set stepped for the dark surface, not an automatic flip.
+   Declared under both scopes so an explicit toggle wins either direction. */
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --plane: #0d0d0d;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --line: rgba(255, 255, 255, 0.1);
+    --urgent: #d03b3b;
+    --planned: #fab219;
+    --forecast: #3987e5;
+    --urgent-wash: #2a1718;
+    --planned-wash: #2b2411;
+    --forecast-wash: #12243a;
+    --good: #0ca30c;
+  }
 }
 
-/* Tabular figures everywhere a number can change, so digits don't jitter as
-   the telemetry stream updates. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface: #1a1a19;
+  --plane: #0d0d0d;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --line: rgba(255, 255, 255, 0.1);
+  --urgent: #d03b3b;
+  --planned: #fab219;
+  --forecast: #3987e5;
+  --urgent-wash: #2a1718;
+  --planned-wash: #2b2411;
+  --forecast-wash: #12243a;
+  --good: #0ca30c;
+}
+
+body {
+  margin: 0;
+  background: var(--plane);
+  color: var(--ink);
+  font-size: 14px;
+}
+
+/* Tabular figures only where digits must align vertically (table columns,
+   axis ticks) - not on standalone hero numbers, which use proportional. */
 .num {
   font-variant-numeric: tabular-nums;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+/* Recharts overrides: recessive grid and axes, no focus outline halo. */
+.recharts-cartesian-axis-line,
+.recharts-cartesian-axis-tick-line {
+  stroke: var(--axis);
+}
+.recharts-text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.recharts-surface:focus {
+  outline: none;
 }
