@@ -387,6 +387,34 @@ def build_parts_catalog() -> list[PartSpec]:
     return parts
 
 
+# Short, UNIQUE code per component type, used to build component_id.
+# Must stay injective: a truncation like ckey.upper()[:4] collides
+# (condenser_coil/condenser_fan_motor -> COND, control_board/contactor -> CONT,
+# evaporator/evap_blower_motor -> EVAP), which silently merges two components'
+# failure histories into each other's training labels.
+COMPONENT_CODE: dict[str, str] = {
+    "compressor": "CMP",
+    "condenser_coil": "CDC",
+    "condenser_fan_motor": "CFM",
+    "evap_blower_motor": "EBM",
+    "evaporator": "EVP",
+    "cooling_coil": "CLC",
+    "eev": "EEV",
+    "txv": "TXV",
+    "vfd": "VFD",
+    "control_board": "CTB",
+    "run_capacitor": "CAP",
+    "contactor": "CNT",
+    "refrigerant_circuit": "RFC",
+    "fan_bearing": "BRG",
+    "damper_actuator": "DMP",
+    "belt": "BLT",
+    "filter": "FLT",
+}
+assert len(set(COMPONENT_CODE.values())) == len(COMPONENT_CODE), "component codes must be unique"
+assert set(COMPONENT_CODE) == set(COMPONENTS), "every component type needs a code"
+
+
 _PART_PREFIX = {
     "compressor": "CMP", "condenser_coil": "CDC", "condenser_fan_motor": "CFM",
     "evap_blower_motor": "EBM", "evaporator": "EVP", "cooling_coil": "CLC",

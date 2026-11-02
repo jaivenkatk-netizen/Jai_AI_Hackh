@@ -44,6 +44,7 @@ from scipy.special import gamma as gamma_fn
 from sim.catalog import (
     ASSET_TYPES,
     CLIMATE_ZONES,
+    COMPONENT_CODE,
     COMPONENTS,
     DESIGN_AMBIENT_C,
     HUB_CLIMATE,
@@ -610,7 +611,7 @@ def simulate(
             damage[ckey] = life.damage_frac
             lives[ckey] = life
 
-            component_id = f"{asset['asset_id']}-{ckey.upper()[:4]}"
+            component_id = f"{asset['asset_id']}-{COMPONENT_CODE[ckey]}"
             last_install_idx = max([d for d in life.install_day if d < n_days], default=-1)
             last_service = dates[last_install_idx] if last_install_idx >= 0 else pd.Timestamp(asset["install_date"])
 
