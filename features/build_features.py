@@ -39,20 +39,51 @@ SIGNALS = [
     "charge_frac", "ambient_t_max", "runtime_h", "load_frac", "starts", "short_cycles",
 ]
 
-WINDOWS = (7, 30, 90)
+# 30/90-day windows only. The 7-day window added 17 features that duplicate
+# what the 30-day mean already carries for a degradation signal measured over
+# months, and this box has 3.9GB of RAM - feature count is a memory budget here,
+# not a free parameter.
+WINDOWS = (30, 90)
 SLOPE_WINDOWS = (30, 90)
+
+# Extra snapshots taken this many days before each observed failure.
+#
+# A uniform 30-day grid almost never lands close to a failure, so the model
+# sees very few short-horizon labels and learns to hedge: measured, the
+# minimum predicted P50 across the whole fleet was 19 days, which leaves the
+# Urgent bucket (0-14 d) permanently empty - the one bucket the brief cares
+# most about. Anchoring a few snapshots just before each event teaches the
+# short-horizon regime directly, at a fraction of the cost of densifying the
+# whole grid.
+EVENT_ANCHORED_OFFSETS = (3, 9, 18)
 
 # Train/test split: by time AND by asset, so neither a future month nor a
 # sibling component on the same machine can leak into training.
-TRAIN_DAYS = 547  # months 1-18
+# Expressed as a fraction of the window rather than a fixed day count - a
+# hardcoded 547 days was 75% of the original 2-year window but only 30% of a
+# 5-year one, which silently pushed most of the data into test.
+TRAIN_TIME_FRAC = 0.75
 HOLDOUT_ASSET_FRAC = 0.20
-SNAPSHOT_EVERY_DAYS = 30
+SNAPSHOT_EVERY_DAYS = 45
 WARMUP_DAYS = 95  # need a full 90-day window before the first snapshot
 
 
 # --------------------------------------------------------------------------
 # Rolling primitives
 # --------------------------------------------------------------------------
+
+
+def snapshot_dates(window_start: pd.Timestamp, as_of: pd.Timestamp) -> pd.DatetimeIndex:
+    """The snapshot grid, defined in exactly one place.
+
+    Anchored to end at `as_of` so today's prediction uses today's telemetry.
+    Both the feature filter and the labeller must use the same grid - when they
+    were computed independently the two ranges drifted apart and the inner
+    merge silently produced zero rows.
+    """
+    span = (as_of - (window_start + pd.Timedelta(days=WARMUP_DAYS))).days
+    n = int(span // SNAPSHOT_EVERY_DAYS) + 1
+    return pd.date_range(end=as_of, periods=max(n, 2), freq=f"{SNAPSHOT_EVERY_DAYS}D")
 
 
 def _slope_weights(w: int) -> np.ndarray:
@@ -105,10 +136,46 @@ def rolling_slope(v: np.ndarray, w: int) -> np.ndarray:
 # --------------------------------------------------------------------------
 
 
-def build_asset_features(telemetry: pd.DataFrame) -> pd.DataFrame:
-    """Causal rolling features per asset-day."""
+def event_anchored_dates(
+    work_orders: pd.DataFrame, window_start: pd.Timestamp, as_of: pd.Timestamp
+) -> dict[str, set[pd.Timestamp]]:
+    """Per-asset snapshot dates sitting just before each observed failure."""
+    cm = work_orders[(work_orders["type"] != "PM") & work_orders["component_id"].notna()]
+    lo = window_start + pd.Timedelta(days=WARMUP_DAYS)
+    out: dict[str, set[pd.Timestamp]] = {}
+    for aid, grp in cm.groupby("asset_id"):
+        dates: set[pd.Timestamp] = set()
+        for ts in grp["open_ts"]:
+            for off in EVENT_ANCHORED_OFFSETS:
+                d = pd.Timestamp(ts).normalize() - pd.Timedelta(days=off)
+                if lo <= d <= as_of:
+                    dates.add(d)
+        if dates:
+            out[str(aid)] = dates
+    return out
+
+
+def build_asset_features(
+    telemetry: pd.DataFrame,
+    keep_dates: pd.DatetimeIndex | None = None,
+    keep_by_asset: dict[str, set[pd.Timestamp]] | None = None,
+) -> pd.DataFrame:
+    """Causal rolling features per asset-day.
+
+    `keep_dates` restricts the *returned* rows (rolling windows still see the
+    full history, so nothing is lost). Over a 5-year window the full matrix is
+    912,500 x 125, which needs ~900MB per array and OOMs on concat - and every
+    one of those rows except the ~60 snapshot dates per asset is discarded
+    immediately afterwards. Filtering inside the loop cuts the result to ~30k
+    rows at identical values.
+
+    Features are emitted as float32: the downstream consumer is XGBoost, which
+    casts to float32 internally anyway, so float64 doubles peak memory for no
+    precision that survives.
+    """
     telemetry = telemetry.sort_values(["asset_id", "ts"])
     frames: list[pd.DataFrame] = []
+    keep = set(keep_dates) if keep_dates is not None else None
 
     for asset_id, g in telemetry.groupby("asset_id", sort=False):
         n = len(g)
@@ -177,9 +244,12 @@ def build_asset_features(telemetry: pd.DataFrame) -> pd.DataFrame:
                 pd.Series(g["starts"].to_numpy(dtype=float)).rolling(7, min_periods=1).mean().to_numpy()
             )
 
-        out = pd.DataFrame(cols)
+        out = pd.DataFrame({k: v.astype(np.float32, copy=False) for k, v in cols.items()})
         out.insert(0, "ts", g["ts"].to_numpy())
         out.insert(0, "asset_id", asset_id)
+        if keep is not None:
+            wanted = keep | (keep_by_asset.get(str(asset_id), set()) if keep_by_asset else set())
+            out = out[out["ts"].isin(wanted)]
         frames.append(out)
 
     return pd.concat(frames, ignore_index=True)
@@ -213,18 +283,26 @@ def build_snapshots(
         aid: np.sort(grp["open_ts"].to_numpy()) for aid, grp in pm.groupby("asset_id")
     }
 
-    snap_dates = pd.date_range(
-        window_start + pd.Timedelta(days=WARMUP_DAYS), as_of, freq=f"{SNAPSHOT_EVERY_DAYS}D"
-    )
+    snap_dates = snapshot_dates(window_start, as_of)
     asset_meta = assets.set_index("asset_id")
 
     rows: list[dict] = []
+    lo = window_start + pd.Timedelta(days=WARMUP_DAYS)
     for comp in components.itertuples(index=False):
         fails = fail_by_comp.get(comp.component_id, np.array([], dtype="datetime64[ns]"))
         pms = pm_by_asset.get(comp.asset_id, np.array([], dtype="datetime64[ns]"))
         meta = asset_meta.loc[comp.asset_id]
 
-        for snap in snap_dates:
+        # The uniform grid, plus a few snapshots just before this component's
+        # own failures so short-horizon labels are actually represented.
+        comp_dates = set(snap_dates)
+        for f in fails:
+            for off in EVENT_ANCHORED_OFFSETS:
+                d = pd.Timestamp(f).normalize() - pd.Timedelta(days=off)
+                if lo <= d <= as_of:
+                    comp_dates.add(d)
+
+        for snap in sorted(comp_dates):
             snap64 = np.datetime64(snap)
             nxt = fails[fails > snap64]
             if len(nxt):
@@ -238,9 +316,20 @@ def build_snapshots(
                 y_lower, y_upper = dur, np.inf
                 event = False
 
-            # Component state as of the snapshot - strictly backward looking
+            # Component state as of the snapshot - strictly backward looking.
+            #
+            # `components.install_date` must NOT be used here: it holds the
+            # component's *most recent* service date, which for a part replaced
+            # later in the window lies in the snapshot's future. Using it made
+            # age_days negative (median -16 d on near-failure rows, -936 d
+            # overall) and leaked the replacement date into the features. Since
+            # age_days is a top-gain feature, that corruption swamped the real
+            # telemetry signal. The honest fallback is the asset's commissioning
+            # date, which is genuinely known at snapshot time.
             prev_fails = fails[fails <= snap64]
-            last_event = prev_fails[-1] if len(prev_fails) else np.datetime64(pd.Timestamp(comp.install_date))
+            last_event = (
+                prev_fails[-1] if len(prev_fails) else np.datetime64(pd.Timestamp(meta["install_date"]))
+            )
             prev_pms = pms[pms <= snap64]
             last_pm = prev_pms[-1] if len(prev_pms) else last_event
 
@@ -252,8 +341,10 @@ def build_snapshots(
                 "y_lower": y_lower,
                 "y_upper": y_upper,
                 "event": event,
-                "age_days": float((snap64 - last_event) / np.timedelta64(1, "D")),
-                "days_since_pm": float((snap64 - last_pm) / np.timedelta64(1, "D")),
+                # Clipped at 0: an age can never be negative, and a stray
+                # negative would be a silent signal that the leak is back.
+                "age_days": max(0.0, float((snap64 - last_event) / np.timedelta64(1, "D"))),
+                "days_since_pm": max(0.0, float((snap64 - last_pm) / np.timedelta64(1, "D"))),
                 "n_past_repairs": int(len(prev_fails)),
                 "asset_age_days": float(meta["age_days"]),
                 "capacity_kw": float(meta["capacity_kw"]),
@@ -306,9 +397,10 @@ def split(df: pd.DataFrame, window_start: pd.Timestamp, seed: int = 42) -> pd.Da
     held = set(rng.choice(assets, size=n_hold, replace=False).tolist())
 
     day = (df["snapshot"] - window_start).dt.days
+    cutoff = float(day.max()) * TRAIN_TIME_FRAC
     df = df.copy()
     df["held_out_asset"] = df["asset_id"].isin(held)
-    df["late_period"] = day > TRAIN_DAYS
+    df["late_period"] = day > cutoff
     df["fold"] = np.where(df["held_out_asset"] | df["late_period"], "test", "train")
     return df
 
@@ -335,10 +427,17 @@ def main() -> None:
     window_start = pd.Timestamp(telemetry["ts"].min())
     print(f"window {window_start.date()} .. {as_of.date()}  ({len(telemetry):,} telemetry rows)")
 
-    print("building asset rolling features ...")
-    asset_feat = build_asset_features(telemetry)
+    # Snapshot dates are known up front, so the feature matrix only needs to
+    # materialise those rows (rolling windows still read the whole series).
+    snap_dates = snapshot_dates(window_start, as_of)
+    anchored = event_anchored_dates(work_orders, window_start, as_of)
+    n_anchored = sum(len(v) for v in anchored.values())
+    print(f"building asset rolling features at {len(snap_dates)} grid dates "
+          f"({snap_dates[0].date()} .. {snap_dates[-1].date()}) "
+          f"+ {n_anchored:,} event-anchored dates ...")
+    asset_feat = build_asset_features(telemetry, keep_dates=snap_dates, keep_by_asset=anchored)
     asset_feat.to_parquet(d / "asset_features.parquet", index=False)
-    print(f"  {len(asset_feat):,} asset-days x {asset_feat.shape[1] - 2} features"
+    print(f"  {len(asset_feat):,} asset-snapshots x {asset_feat.shape[1] - 2} features"
           f"  ({time.perf_counter() - t0:.1f}s)")
 
     print("sampling snapshots and labelling ...")

@@ -67,7 +67,15 @@ from sim.catalog import (
 # --------------------------------------------------------------------------
 
 AS_OF = date(2026, 11, 3)  # "today" for the whole prototype
-N_DAYS = 730  # 2 years of history
+# 5 years of history. Two years was the original choice and it was too short:
+# a compressor has a ~4000-day nominal life, so in a 730-day window virtually
+# every compressor row is right-censored and the conditional model has no
+# failures to learn from. Measured, that produced a rank correlation of 0.077
+# on compressors (and a 14,588-day prediction for a component 9 days from
+# failure) while the fleet-level C-index still read 0.95, because the uncensored
+# rows were nearly all short-lived filters and contactors. Five years gives the
+# long-lived parts real events; real fleets have at least this much history.
+N_DAYS = 1825
 N_ASSETS = 500
 N_SITES = 60
 HOURLY_ASSETS = 50  # demo subset for the live-stream visual

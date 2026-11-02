@@ -132,10 +132,17 @@ def bucket_edges() -> list[tuple[Bucket, float, float]]:
 # Confidence
 # --------------------------------------------------------------------------
 
-# A band wider than this fraction of its own median is "wide" - a relative
-# measure, because 20 days of uncertainty means very different things on a
-# 30-day and a 600-day prediction.
-_WIDE_BAND_RATIO = 1.5
+# Default "wide band" threshold, as a multiple of the band's own median - a
+# relative measure, because 20 days of uncertainty means very different things
+# on a 30-day and a 600-day prediction.
+#
+# Callers should pass the fleet's own upper-tercile relative width instead of
+# relying on this default. A fixed threshold is a trap: set at 1.5 against a
+# fleet whose median relative width was 2.1, it fired for almost every
+# component, so the badge stopped discriminating. Judging each band against the
+# fleet distribution keeps "wide" meaning "wide compared to what this model
+# usually achieves".
+_WIDE_BAND_RATIO = 2.5
 
 
 def confidence_badge(
@@ -144,6 +151,7 @@ def confidence_badge(
     hours_since_last_reading: float,
     imputed_share: float,
     ood_score: float,
+    wide_band_ratio: float = _WIDE_BAND_RATIO,
 ) -> ConfidenceBadge:
     """Combine interval width, data quality and OOD distance into a badge.
 
@@ -159,7 +167,7 @@ def confidence_badge(
     reasons: list[str] = []
 
     demerits = 0
-    if band_ratio > _WIDE_BAND_RATIO:
+    if band_ratio > wide_band_ratio:
         demerits += 1
         reasons.append(f"Wide TTM band ({band.p10_days:.0f}-{band.p90_days:.0f} d)")
     if quality < 0.6:

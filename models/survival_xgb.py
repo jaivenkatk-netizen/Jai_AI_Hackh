@@ -37,6 +37,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import time
 from pathlib import Path
@@ -86,17 +87,41 @@ PHM_EXP_CLIP = 10.0
 
 
 def to_dmatrix(df: pd.DataFrame, feats: list[str]) -> xgb.DMatrix:
-    """Interval-censored DMatrix. Censored rows get an infinite upper bound."""
-    d = xgb.DMatrix(df[feats].astype(float).to_numpy(), feature_names=feats, missing=np.nan)
+    """Interval-censored DMatrix. Censored rows get an infinite upper bound.
+
+    float32, not float64: XGBoost casts to float32 internally regardless, so
+    the wider dtype only doubles peak memory. At 215k x 165 across three
+    simultaneous matrices the float64 path exhausted the heap outright.
+    """
+    d = xgb.DMatrix(
+        df[feats].to_numpy(dtype=np.float32), feature_names=feats, missing=np.nan
+    )
     d.set_float_info("label_lower_bound", df["y_lower"].to_numpy(dtype=float))
     d.set_float_info("label_upper_bound", df["y_upper"].to_numpy(dtype=float))
     return d
 
 
+ID_COLS = ["component_id", "asset_id", "component_type", "snapshot", "y_lower", "y_upper", "event", "fold"]
+
+
 def load(data: Path) -> tuple[pd.DataFrame, list[str]]:
-    snaps = pd.read_parquet(data / "train_snapshots.parquet")
-    feats = pd.read_parquet(data / "feature_list.parquet")["feature"].tolist()
-    feats = [f for f in feats if f in snaps.columns]
+    """Load only the columns the model needs, as float32 where numeric.
+
+    Reading the whole snapshot table costs ~2x what the model uses; on a 3.9GB
+    box that difference is the whole training budget.
+    """
+    import pyarrow.parquet as pq
+
+    path = data / "train_snapshots.parquet"
+    available = set(pq.ParquetFile(path).schema.names)
+    feats = [f for f in pd.read_parquet(data / "feature_list.parquet")["feature"] if f in available]
+    cols = [c for c in ID_COLS if c in available] + [f for f in feats if f not in ID_COLS]
+
+    snaps = pd.read_parquet(path, columns=cols)
+    for c in feats:
+        if snaps[c].dtype == np.float64:
+            snaps[c] = snaps[c].astype(np.float32)
+    gc.collect()
     return snaps, feats
 
 
@@ -191,8 +216,28 @@ def train(snaps: pd.DataFrame, feats: list[str]) -> tuple[xgb.Booster, dict]:
     cal = tr[tr["asset_id"].isin(cal_assets)]
     fit = tr[~tr["asset_id"].isin(cal_assets)]
 
-    dfit, dcal, dte = to_dmatrix(fit, feats), to_dmatrix(cal, feats), to_dmatrix(te, feats)
     print(f"  fit {len(fit):,} | cal {len(cal):,} | test {len(te):,} rows, {len(feats)} features")
+
+    # Memory discipline for a 3.9GB box: build the two matrices training needs,
+    # drop every intermediate frame, and never hold a test DMatrix during
+    # training (evaluate() builds it afterwards). QuantileDMatrix pre-bins for
+    # tree_method="hist", which is both what we train with and markedly leaner
+    # than a dense DMatrix.
+    dfit = xgb.QuantileDMatrix(
+        fit[feats].to_numpy(dtype=np.float32), feature_names=feats, missing=np.nan
+    )
+    dfit.set_float_info("label_lower_bound", fit["y_lower"].to_numpy(dtype=float))
+    dfit.set_float_info("label_upper_bound", fit["y_upper"].to_numpy(dtype=float))
+
+    dcal = xgb.QuantileDMatrix(
+        cal[feats].to_numpy(dtype=np.float32), feature_names=feats, missing=np.nan, ref=dfit
+    )
+    dcal.set_float_info("label_lower_bound", cal["y_lower"].to_numpy(dtype=float))
+    dcal.set_float_info("label_upper_bound", cal["y_upper"].to_numpy(dtype=float))
+
+    n_test = len(te)
+    del te
+    gc.collect()
 
     booster = xgb.train(
         PARAMS,
@@ -202,9 +247,12 @@ def train(snaps: pd.DataFrame, feats: list[str]) -> tuple[xgb.Booster, dict]:
         early_stopping_rounds=EARLY_STOP,
         verbose_eval=100,
     )
+    del dfit
+    gc.collect()
 
     # Predictive sigma from held-out residuals on *uncensored* calibration rows
     # only - a censored row has no observed log-residual to measure.
+    booster.set_param({"nthread": 1})  # keep per-thread prediction buffers small
     cal_mu = booster.predict(dcal, output_margin=True)
     cal_obs = cal["event"].to_numpy(dtype=bool)
     resid = np.log(np.clip(cal["y_lower"].to_numpy(dtype=float), 0.5, None)) - cal_mu
@@ -232,7 +280,7 @@ def train(snaps: pd.DataFrame, feats: list[str]) -> tuple[xgb.Booster, dict]:
         "params": PARAMS,
         "n_fit": int(len(fit)),
         "n_cal": int(len(cal)),
-        "n_test": int(len(te)),
+        "n_test": int(n_test),
         "calibration_assets": sorted(cal_assets),
     }
     return booster, meta
@@ -302,6 +350,42 @@ def evaluate(booster: xgb.Booster, meta: dict, snaps: pd.DataFrame, feats: list[
     return pd.DataFrame(rows)
 
 
+def evaluate_by_type(
+    booster: xgb.Booster, meta: dict, snaps: pd.DataFrame, feats: list[str], min_rows: int = 25
+) -> pd.DataFrame:
+    """Per-component-type scores. Non-optional, because the aggregate lies.
+
+    Uncensored test rows are overwhelmingly short-lived parts - filters and
+    contactors fail repeatedly inside the window, compressors almost never do.
+    So a fleet-level C-index can read 0.95 while the model has no signal at all
+    on the components that dominate cost and drive the urgent queue. Reporting
+    rank correlation per type is what surfaces that; it is the single most
+    useful line in this file.
+    """
+    te = snaps[snaps["fold"] == "test"]
+    rows = []
+    for ctype, g in te.groupby("component_type"):
+        obs = g[g["event"].to_numpy(dtype=bool)]
+        if len(obs) < min_rows:
+            continue
+        mu = booster.predict(to_dmatrix(obs, feats), output_margin=True)
+        pred = np.exp(mu)
+        y = obs["y_lower"].to_numpy(dtype=float)
+        rho = float(pd.Series(pred).corr(pd.Series(y), method="spearman"))
+        rows.append(
+            {
+                "component_type": ctype,
+                "n_events": int(len(obs)),
+                "n_rows": int(len(g)),
+                "censored": round(1.0 - float(g["event"].mean()), 3),
+                "median AE (d)": round(float(np.median(np.abs(pred - y))), 1),
+                "median true (d)": round(float(np.median(y)), 1),
+                "spearman": round(rho, 3),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("spearman")
+
+
 def score_all(booster: xgb.Booster, meta: dict, data: Path) -> pd.DataFrame:
     """Predict mu/sigma for every component as of today -> the pipeline input."""
     score = pd.read_parquet(data / "score_snapshots.parquet")
@@ -356,6 +440,18 @@ def main() -> None:
     table = evaluate(booster, meta, snaps, feats)
     print(table.to_string(index=False, float_format=lambda v: f"{v:,.3f}"))
     table.to_parquet(ARTIFACTS / "eval_table.parquet", index=False)
+
+    by_type = evaluate_by_type(booster, meta, snaps, feats)
+    by_type.to_parquet(ARTIFACTS / "eval_by_type.parquet", index=False)
+    print("\nper-component-type (worst rank correlation first):")
+    print(by_type.to_string(index=False))
+    weak = by_type[by_type["spearman"] < 0.3]
+    if len(weak):
+        print(
+            "\n  WEAK: " + ", ".join(weak["component_type"])
+            + "\n  These types have too few in-window failures for the conditional model to\n"
+            "  learn from; they fall back to the fleet prior. Reported, not hidden."
+        )
 
     imp = booster.get_score(importance_type="gain")
     top = sorted(imp.items(), key=lambda kv: -kv[1])[:12]
