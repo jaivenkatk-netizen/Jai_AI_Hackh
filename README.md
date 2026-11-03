@@ -38,6 +38,70 @@ python -m models.survival_xgb --evaluate
 #    matter most, so this table is not optional.
 ```
 
+## The physics-informed network (PINN)
+
+`models/pinn.py`. The governing equations of the refrigeration cycle replace
+labelled data: nothing in the field carries a "the condenser is 23% fouled"
+label, so a supervised model cannot be trained to emit one, but the physics
+can supply that supervision instead.
+
+```powershell
+python -m models.pinn --identifiability   # which parameters the sensors can resolve
+python -m models.pinn --gradcheck         # analytic vs finite-difference gradients
+python -m models.pinn --sample            # ~9 min: sample the twin
+python -m models.pinn --train-surrogate   # stage 1
+python -m models.pinn --train-inverse     # stage 2, no labels
+python -m models.pinn --evaluate          # inferred state vs known damage
+```
+
+Two stages. **S** maps (fault state, conditions) to signals, trained only on
+output from the twin - it exists because the twin itself is not
+differentiable, solving nested brentq over CoolProp lookups. **F** inverts it:
+given the sensors, infer the fault state, with the loss being the physics
+residual `|| S(F(obs)) - obs ||²` and no labels anywhere.
+
+It is numpy with analytic gradients, checked against finite differences to
+1e-6. A deep-learning framework would have cost ~300 MB resident for a few
+hundred parameters, in the same process as the survival booster, on a box
+with under 600 MB free.
+
+**Three parameters, not five, and that was measured.** `wear_frac` moves these
+four signals by under one noise sigma over its whole range and accounts for
+0.996 of the smallest singular direction - compressor wear shows up in power
+draw, and this fleet's current channel is uncalibrated. `foul_frac` and
+`airflow_frac` are aliased through discharge pressure. The remaining three
+have a Jacobian condition number of 12.6-14.3 across the operating envelope.
+
+**Result: one of three parameters works.**
+
+| inferred | vs its own true damage | vs ambient | pinned at bound |
+|---|---|---|---|
+| **Refrigerant charge** | **r = 0.79** | 0.31 | 0.1% |
+| Condenser degradation | r = 0.23 | **-0.78** | 60% |
+| Evaporator degradation | r = 0.11 | -0.62 | 70% |
+
+Refrigerant charge is a genuine virtual sensor - r = 0.79 against the
+generator's true refrigerant-circuit damage, clean against the other two
+modes, and barely ever saturated. It works because superheat carries charge,
+and superheat is a channel the twin reproduces to 0.08 of the sensor noise.
+
+The other two fail for the reason recorded in the next section: they read the
+weather and saturate against their bounds. The held-out physics residual is
+~106 squared noise sigmas where a sound forward model would give 1.0, so no
+reachable fault state explains this fleet's pressures. The UI shows all three
+and labels which survived validation, because hiding the two failures would
+be the dishonest option and dropping them would hide that the method was
+tried.
+
+One debugging note worth keeping: the surrogate sat at a 4-sigma error floor
+until `asset_type` was added as an input. Each machine family has its own
+design point, so the same fault state and weather give different pressures on
+a chiller and an RTU, and the network could not tell them apart - 7.3 sigmas
+on chillers against 2.5 on split units. With the family supplied it fits to
+**0.09-0.17 sigmas**, about 25x finer than the sensors. `cap_ratio` went the
+other way and was removed: the twin's equations are homogeneous in capacity,
+so a 40 kW and a 560 kW chiller return bit-identical pressures.
+
 ## One thing we tried that did not work
 
 The asset twin (`sim/asset_twin.py`) was built to supply a residual feature:

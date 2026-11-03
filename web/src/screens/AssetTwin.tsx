@@ -2,9 +2,11 @@
 // one page: the health state, the TTM band, the drivers behind it, and the
 // assumptions it rests on.
 
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 
 import { BandBar, SurvivalChart, TrendChart } from "../components/charts";
+import FaultStatePanel from "../components/faultstate";
+const Twin3D = lazy(() => import("../components/twin3d"));
 import WhatIfPanel from "../components/whatif";
 import { BucketChip, Card, ConfidenceBadge, ErrorNote, Pill, Spinner } from "../components/ui";
 import { api } from "../lib/api";
@@ -118,8 +120,30 @@ export default function AssetTwin({
       <div className="grid gap-3 lg:grid-cols-[320px_1fr]">
         {/* ---- left: twin + component list ---- */}
         <div className="flex flex-col gap-3">
-          <Card title="Cycle state" subtitle={data.twin.source}>
-            <CycleSchematic health={data.twin.component_health} />
+          <Card
+            title="Digital twin"
+            subtitle="The refrigerant circuit of this machine, shaded by predicted health. Drag to rotate; click a part to select it."
+          >
+            <Suspense
+              fallback={
+                <div
+                  className="flex items-center justify-center rounded text-[11px]"
+                  style={{ height: 300, background: "var(--plane)", color: "var(--ink-2)" }}
+                >
+                  Loading the 3D view...
+                </div>
+              }
+            >
+            <Twin3D
+              health={data.twin.component_health}
+              selectedType={comp?.component_type ?? null}
+              onSelectType={(t) => {
+                const i = data.components.findIndex((c) => c.component_type === t);
+                if (i >= 0) setSel(i);
+              }}
+              fallback={<CycleSchematic health={data.twin.component_health} />}
+            />
+            </Suspense>
             <dl className="num mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
               {[
                 ["Suction", data.twin.suction_p_kpa, "kPa"],
@@ -276,6 +300,8 @@ export default function AssetTwin({
               </div>
             </Card>
           </div>
+
+          <FaultStatePanel state={data.fault_state} />
 
           <WhatIfPanel assetId={data.asset_id} />
 

@@ -170,6 +170,7 @@ export interface AssetDetail {
     notes: string | null;
     downtime_h: number | null;
   }[];
+  fault_state: FaultState | null;
 }
 
 export interface PartsDemandRow {
@@ -302,6 +303,22 @@ const qs = (p: Record<string, string | number | undefined | null>) => {
 // What-if. The only endpoint that runs the model inside a request, so it is
 // the only one that POSTs and the only one with a perceptible latency budget.
 // ---------------------------------------------------------------------------
+
+export interface FaultParam {
+  key: string;
+  label: string;
+  value: number;
+  /** False means the parameter did not survive validation and must be shown as such. */
+  validated: boolean;
+}
+
+export interface FaultState {
+  params: FaultParam[];
+  physics_residual: number;
+  explains_sensors: boolean;
+  as_of: string;
+  method: string;
+}
 
 export interface TwinSignal {
   observed: number;

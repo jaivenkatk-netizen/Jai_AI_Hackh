@@ -46,3 +46,9 @@ data/_*.err
 
 # large local archives - never commit (GitHub rejects >100MB files)
 *.zip
+
+# PINN artefacts: the trained nets are small and committed; the twin
+# sample set and the inferred fleet state regenerate from them.
+data/synthetic/twin_samples.parquet
+data/synthetic/_t_evap.npy
+data/synthetic/_t_cond.npy

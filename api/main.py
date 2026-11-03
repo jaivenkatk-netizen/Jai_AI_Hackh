@@ -455,6 +455,7 @@ def get_asset(asset_id: str, trend_days: int = Query(90, le=365)) -> dict:
     return {
         **meta,
         "twin": _twin_state(tel, comps, meta),
+        "fault_state": _fault_state(asset_id),
         "sensors": sensors,
         "components": components,
         "history": hist,
@@ -496,7 +497,65 @@ def _twin_state(tel: pd.DataFrame, comps: pd.DataFrame, meta: dict) -> dict:
         "cop": g("cop"),
         "ambient_t_max": g("ambient_t_max"),
         "component_health": health,
-        "source": "observed telemetry (physics twin pending)",
+        "source": "observed telemetry",
+    }
+
+
+FAULT_STATE_PARQUET = ROOT / "data" / "synthetic" / "fault_state.parquet"
+
+
+def _fault_state(asset_id: str) -> dict | None:
+    """Physics-informed inferred fault state for one asset.
+
+    Read straight from the parquet rather than a DuckDB table so it can be
+    refreshed by `python -m models.pinn --infer` without rebuilding the whole
+    pipeline. Returns None when the file is absent, so the screen degrades to
+    telemetry-only rather than erroring.
+
+    Only `charge_frac` survived validation (r = 0.786 against the generator's
+    true refrigerant-circuit damage). The other two parameters are returned
+    with `validated: false` and must be rendered as such - they saturate
+    against their bounds and track ambient rather than damage.
+    """
+    if not FAULT_STATE_PARQUET.exists():
+        return None
+    con = db()
+    try:
+        df = con.execute(
+            "SELECT * FROM read_parquet(?) WHERE asset_id = ?",
+            [str(FAULT_STATE_PARQUET), asset_id],
+        ).df()
+    except Exception:
+        return None
+    if df.empty:
+        return None
+    r = df.iloc[0]
+    params = []
+    for key, label in (
+        ("charge_frac", "Refrigerant charge"),
+        ("cond_deg", "Condenser degradation"),
+        ("evap_deg", "Evaporator degradation"),
+    ):
+        if key not in df.columns:
+            continue
+        params.append(
+            {
+                "key": key,
+                "label": label,
+                "value": _clean(r[key]),
+                "validated": bool(r.get(f"{key}_validated", False)),
+            }
+        )
+    return {
+        "params": params,
+        "physics_residual": _clean(r.get("physics_residual")),
+        "explains_sensors": bool(r.get("explains_sensors", False)),
+        "as_of": str(r["ts"])[:10],
+        "method": (
+            "Inverse network trained on the twin's physics, no labels. "
+            "Validated against known damage: charge r=0.79; the condenser and "
+            "evaporator parameters did not survive validation."
+        ),
     }
 
 
