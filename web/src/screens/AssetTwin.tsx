@@ -5,6 +5,7 @@
 import { useState } from "react";
 
 import { BandBar, SurvivalChart, TrendChart } from "../components/charts";
+import WhatIfPanel from "../components/whatif";
 import { BucketChip, Card, ConfidenceBadge, ErrorNote, Pill, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { days, num, pct, titleCase } from "../lib/fmt";
@@ -275,6 +276,8 @@ export default function AssetTwin({
               </div>
             </Card>
           </div>
+
+          <WhatIfPanel assetId={data.asset_id} />
 
           <Card
             title="Sensor trends against the healthy baseline"

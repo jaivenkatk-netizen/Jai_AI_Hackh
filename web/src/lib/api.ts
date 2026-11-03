@@ -298,7 +298,101 @@ const qs = (p: Record<string, string | number | undefined | null>) => {
   return out ? `?${out}` : "";
 };
 
+// ---------------------------------------------------------------------------
+// What-if. The only endpoint that runs the model inside a request, so it is
+// the only one that POSTs and the only one with a perceptible latency budget.
+// ---------------------------------------------------------------------------
+
+export interface TwinSignal {
+  observed: number;
+  healthy: number;
+  residual: number;
+}
+
+export interface TwinView {
+  ambient_c: number;
+  load_frac: number;
+  t_evap_c: number;
+  t_cond_c: number;
+  suction_p_kpa: number;
+  discharge_p_kpa: number;
+  superheat_k: number;
+  subcool_k: number;
+  comp_current_a: number;
+  cop: number;
+  cop_compressor: number;
+  capacity_kw: number;
+  pressure_ratio: number;
+  duty_frac: number;
+  cycling: boolean;
+  head_pressure_limited: boolean;
+  converged: boolean;
+  signals: Record<string, TwinSignal>;
+}
+
+export interface WhatIfComponent {
+  component_id: string;
+  component_type: string;
+  criticality: "A" | "B" | "C";
+  p10_days: number;
+  p50_days: number;
+  p90_days: number;
+  p_fail_14d: number;
+  p_fail_90d: number;
+  bucket: Bucket;
+}
+
+export interface WhatIfPartDelta {
+  part_no: string;
+  p90_before: number;
+  p90_after: number;
+  delta: number;
+}
+
+export interface WhatIfResponse {
+  asset_id: string;
+  asset_label: string;
+  asset_type: string;
+  site_name: string;
+  hub_id: string;
+  scenario_label: string;
+  d_ambient: number;
+  d_load: number;
+  d_duty: number;
+  preset?: string;
+  twin_before: TwinView;
+  twin_after: TwinView;
+  components_before: WhatIfComponent[];
+  components_after: WhatIfComponent[];
+  bucket_counts_before: Record<Bucket, number>;
+  bucket_counts_after: Record<Bucket, number>;
+  bucket_migration: Record<string, number>;
+  moved_component_ids: string[];
+  parts_delta: WhatIfPartDelta[];
+  assumptions: string[];
+  compute_ms: number;
+}
+
+export interface WhatIfScenario {
+  asset_id: string;
+  d_ambient_c?: number;
+  d_load_frac?: number;
+  d_duty_hours?: number;
+  preset?: string;
+}
+
+const post = async <T>(path: string, body: unknown): Promise<T> => {
+  const r = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText} on ${path}`);
+  return (await r.json()) as T;
+};
+
 export const api = {
+  whatif: (s: WhatIfScenario) => post<WhatIfResponse>("/whatif", s),
   kpis: (hub?: string) => get<KpiResponse>(`/kpis${qs({ hub })}`),
   fleet: (hub?: string, bucket?: Bucket, limit = 300) =>
     get<FleetResponse>(`/fleet${qs({ hub, bucket, limit })}`),

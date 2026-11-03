@@ -65,6 +65,7 @@ except Exception:  # pragma: no cover - exercised only on machines without the w
 # Physical constants
 CP_AIR = 1005.0  # J/kg.K
 R_SQRT3 = math.sqrt(3.0)
+TON_KW = 3.516853  # one ton of refrigeration, in kW
 
 
 # --------------------------------------------------------------------------
@@ -143,13 +144,26 @@ class TwinSpec:
     refrigerant: str = "R32"
     capacity_kw: float = 280.0
 
-    # Compressor
-    # Calibrated so the model delivers nameplate capacity at 35 C ambient:
-    # the first guess of 0.065 produced 401 kW from a 280 kW machine. At this
-    # value the twin reports 280 kW at COP 5.0 and 0.70 kW/ton, which sits in
-    # the 0.55-0.75 band for a good chiller - so the absolute numbers are
-    # defensible, not just the fault directions.
-    displacement_m3_s: float = 0.03653  # swept volume rate at full speed
+    # Compressor and heat exchangers.
+    #
+    # These four numbers are calibrated jointly, and the calibration point is
+    # the one that matters: ambient 30 C at 55% load, which is the reference
+    # the fleet's healthy baseline signals are defined at. At that point the
+    # twin reproduces the fleet's healthy chiller exactly - suction 880 kPa,
+    # discharge 2400 kPa, superheat 5.5 K, subcool 4.5 K, 154 kW, plant COP
+    # 3.20 - which is the condition for `residuals()` to be near zero on a
+    # healthy machine. Before this calibration the twin sat at 14.7 C
+    # saturated suction against the fleet's 2.5 C, a +389 kPa bias that would
+    # have swamped every fault signature the residual exists to expose.
+    #
+    # The honest cost: at 35 C and full load the twin delivers 230 kW from a
+    # 280 kW nameplate at 1.42 kW/ton, which is worse than a real machine.
+    # The fleet's baseline is a signal-level definition, not a thermodynamic
+    # one, and its nominal pressures at 55% load imply a condenser smaller
+    # than nameplate duty would need - the two cannot both be satisfied. The
+    # residual is computed at each asset's actual conditions, which cluster
+    # around the reference point, so that is where the agreement was spent.
+    displacement_m3_s: float = 0.05018  # swept volume rate at full speed
     clearance: float = 0.045  # clearance-volume fraction
     poly_n: float = 1.12  # re-expansion polytropic index
     isentropic_eff: float = 0.72
@@ -158,13 +172,37 @@ class TwinSpec:
     power_factor: float = 0.86
 
     # Heat exchangers, as lumped conductances [W/K]
-    ua_cond: float = 26_000.0
-    ua_evap: float = 30_000.0
+    ua_cond: float = 21_671.0
+    ua_evap: float = 34_146.0
 
     # Control
     superheat_sp: float = 5.5
     subcool_sp: float = 4.5
     air_in_c: float = 24.0  # return air / chilled-water return
+    chw_supply_sp: float = 7.0  # leaving chilled-water setpoint, the controlled variable
+
+    # Minimum unloading. A screw or scroll machine cannot modulate to zero; it
+    # unloads to roughly a quarter of capacity and then cycles on and off.
+    # Without this floor the model extrapolated to a 9.6 K lift and a COP of
+    # 20 on a lightly-loaded chiller, which no machine does.
+    min_speed_frac: float = 0.25
+    cycling_degradation: float = 0.25  # AHRI-style C_d on the cycling penalty
+
+    # Head-pressure control: the plant holds a minimum condensing temperature
+    # by staging condenser fans down, because the expansion device needs a
+    # pressure differential to feed the evaporator. In mild weather this floor
+    # binds, and it is the reason a chiller's efficiency plateaus rather than
+    # climbing without limit as ambient falls.
+    min_cond_c: float = 25.0
+
+    # Auxiliaries: condenser fans, condenser-water pump, tower fan. These run
+    # whatever the compressor is doing, and they are why plant COP is far
+    # below compressor COP. 0.40 kW/ton of rated capacity is the usual figure
+    # for a water-cooled plant, and it is what makes the twin's COP directly
+    # comparable with the COP the telemetry reports - without it every
+    # cop_resid would carry a constant offset of about 1.8 and encode nothing.
+    aux_kw_per_ton: float = 0.211
+    aux_fixed_frac: float = 0.60  # share that does not vary with load
 
     # ---- fault state: all 1.0 (or 0.0) means healthy -------------------
     foul_frac: float = 0.0  # condenser fouling          -> UA_cond down
@@ -231,9 +269,13 @@ class TwinState:
     q_evap_w: float
     q_cond_w: float
     w_comp_w: float
-    cop: float
+    w_aux_w: float
+    cop: float  # plant COP - what the telemetry channel measures
+    cop_compressor: float  # compressor-only, the textbook cycle figure
     comp_current_a: float
     pressure_ratio: float
+    duty_frac: float  # 1.0 while modulating; below 1.0 the machine cycles
+    head_pressure_limited: bool  # minimum-condensing control is holding
     converged: bool
 
 
@@ -291,7 +333,13 @@ def _residuals(spec: TwinSpec, t_evap: float, t_cond: float, ambient_c: float, s
     t_suc = t_evap + spec.superheat_eff
     h_suc = h_superheated(f, t_suc, p_sat(f, t_evap))
     q_evap_ref = m_dot * (h_suc - h_liq_out)
-    q_evap_air = spec.ua_evap_eff * (spec.air_in_c - t_evap)
+    # Driven by the *leaving* chilled-water setpoint, not the return
+    # temperature. A chiller controls leaving water, so the saturated suction
+    # sits a design approach below the setpoint and stays there as the load
+    # falls - it does not float up towards the return. Driving it from the
+    # return put the twin at 14.7 C saturated suction against the fleet's
+    # 2.5 C, a +389 kPa bias that would have swamped every fault signature.
+    q_evap_air = spec.ua_evap_eff * (spec.chw_supply_sp - t_evap)
 
     return q_cond_ref - q_cond_air, q_evap_ref - q_evap_air
 
@@ -304,14 +352,20 @@ def solve(spec: TwinSpec, ambient_c: float, load_frac: float = 1.0) -> TwinState
     both unconditionally convergent here and far more robust than fsolve,
     which wandered into CoolProp's two-phase region and raised.
     """
-    speed = float(np.clip(load_frac, 0.15, 1.0))
+    # Below the unloading floor the compressor runs at the floor and cycles.
+    # The gauges then read the floor's values while it is running, which is
+    # what a technician would see, and the delivered capacity is the running
+    # capacity times the duty fraction.
+    requested = float(np.clip(load_frac, 0.0, 1.0))
+    speed = max(requested, spec.min_speed_frac)
+    duty = float(np.clip(requested / speed, 0.0, 1.0)) if speed > 0 else 0.0
 
     def evap_balance(t_evap: float, t_cond: float) -> float:
         return _residuals(spec, t_evap, t_cond, ambient_c, speed)[1]
 
     def cond_balance(t_cond: float) -> float:
         # Inner solve: the evaporator temperature consistent with this T_cond
-        lo, hi = -25.0, spec.air_in_c - 0.5
+        lo, hi = -25.0, spec.chw_supply_sp - 0.3
         try:
             f_lo, f_hi = evap_balance(lo, t_cond), evap_balance(hi, t_cond)
         except Exception:
@@ -339,7 +393,14 @@ def solve(spec: TwinSpec, ambient_c: float, load_frac: float = 1.0) -> TwinState
         # rather than raising, and flag it.
         t_cond, converged = hi, False
 
-    lo_e, hi_e = -25.0, spec.air_in_c - 0.5
+    # Head-pressure control. If the free-floating solution sits below the
+    # minimum condensing temperature, the plant stages condenser fans down to
+    # hold that floor, so the floor - not the heat balance - sets T_cond.
+    head_limited = t_cond < spec.min_cond_c
+    if head_limited:
+        t_cond = spec.min_cond_c
+
+    lo_e, hi_e = -25.0, spec.chw_supply_sp - 0.3
     try:
         t_evap = brentq(evap_balance, lo_e, hi_e, args=(t_cond,), xtol=1e-3, maxiter=60)
     except Exception:
@@ -351,10 +412,28 @@ def solve(spec: TwinSpec, ambient_c: float, load_frac: float = 1.0) -> TwinState
     h_liq_out = h_subcooled(f, t_cond, spec.subcool_eff, p_dis)
     h_suc = h_superheated(f, t_evap + spec.superheat_eff, p_suc)
 
-    q_evap = m_dot * (h_suc - h_liq_out)
-    q_cond = m_dot * (h_dis - h_liq_out)
-    cop = q_evap / w_comp if w_comp > 1.0 else 0.0
-    # Three-phase motor current from shaft power
+    q_evap_run = m_dot * (h_suc - h_liq_out)
+    q_cond_run = m_dot * (h_dis - h_liq_out)
+
+    # Cycling costs energy without delivering cooling, so the penalty lands on
+    # the efficiency, not on the capacity. C_d = 0.25 is the AHRI-style figure.
+    cycle_penalty = 1.0 - spec.cycling_degradation * (1.0 - duty)
+
+    # Delivered over the whole cycle; the gauges above still read the running
+    # point, which is the number a technician compares against.
+    q_evap = q_evap_run * duty
+    q_cond = q_cond_run * duty
+    w_comp_avg = (w_comp * duty) / max(cycle_penalty, 1e-6)
+
+    # Auxiliaries scale with rated capacity, not with the current load: the
+    # pumps and tower fan are sized for the machine and mostly run flat out.
+    aux_rated_w = (spec.capacity_kw / TON_KW) * spec.aux_kw_per_ton * 1000.0
+    w_aux = aux_rated_w * (spec.aux_fixed_frac + (1.0 - spec.aux_fixed_frac) * requested)
+
+    w_total = w_comp_avg + w_aux
+    cop = q_evap / w_total if w_total > 1.0 else 0.0
+    cop_comp = q_evap_run / w_comp if w_comp > 1.0 else 0.0
+    # Three-phase motor current from shaft power, at the running point
     current = w_comp / (R_SQRT3 * spec.voltage * spec.power_factor * spec.motor_eff)
 
     return TwinState(
@@ -367,10 +446,14 @@ def solve(spec: TwinSpec, ambient_c: float, load_frac: float = 1.0) -> TwinState
         mass_flow_kg_s=m_dot,
         q_evap_w=q_evap,
         q_cond_w=q_cond,
-        w_comp_w=w_comp,
+        w_comp_w=w_comp_avg,
+        w_aux_w=w_aux,
         cop=cop,
+        cop_compressor=cop_comp,
         comp_current_a=current,
         pressure_ratio=p_dis / max(p_suc, 1e-6),
+        duty_frac=duty,
+        head_pressure_limited=head_limited,
         converged=converged,
     )
 
@@ -379,7 +462,26 @@ def solve(spec: TwinSpec, ambient_c: float, load_frac: float = 1.0) -> TwinState
 # Residual features - the reason the twin exists
 # --------------------------------------------------------------------------
 
-RESIDUAL_SIGNALS = ("discharge_p", "suction_p", "superheat", "subcool", "comp_current", "cop")
+# Signals the twin reproduces on an absolute scale at the calibration point,
+# so that `observed - healthy` is a degradation measure rather than a bias.
+# These are the ones that become model features.
+RESIDUAL_SIGNALS = ("discharge_p", "suction_p", "superheat", "subcool")
+
+# Shown beside the prediction but deliberately NOT used as residual features:
+#
+#   comp_current - the fleet's current channel is on an uncalibrated scale. A
+#     441 kW chiller reports 46 A while a 20.6 kW heat pump reports 15 A; at
+#     415 V that 441 kW machine would really draw above 300 A. The channel is
+#     a relative wear indicator, not an ammeter, so an absolute residual
+#     against it would measure the scale convention and nothing else.
+#   cop - a plant figure including auxiliaries. The twin matches it at the
+#     calibration point by construction, but the match is a fitted constant
+#     rather than an independent prediction, so it would leak the fit into
+#     the feature set rather than add information.
+#
+# Both are still useful to a technician looking at one machine, which is why
+# the what-if panel displays them.
+DISPLAY_SIGNALS = ("discharge_p", "suction_p", "superheat", "subcool", "comp_current", "cop")
 
 
 def healthy_baseline(spec: TwinSpec, ambient_c: float, load_frac: float) -> dict[str, float]:
@@ -410,7 +512,8 @@ def residuals(
     """
     base = healthy_baseline(spec, ambient_c, load_frac)
     out: dict[str, float] = {}
-    for k, b in base.items():
+    for k in RESIDUAL_SIGNALS:
+        b = base[k]
         v = observed.get(k)
         if v is None or (isinstance(v, float) and math.isnan(v)):
             continue
@@ -422,24 +525,75 @@ def residuals(
     return out
 
 
+# The design point of each machine family, as the fleet's own healthy baseline
+# defines it: nominal suction and discharge pressure, the leaving air or water
+# temperature being controlled to, and the superheat and subcool setpoints.
+# Taking these from the fleet definition rather than inventing them is what
+# keeps the residual unbiased for every asset type and not just the chiller
+# the twin was calibrated on.
+#
+# The reference condition these are quoted at is 30 C ambient, 55% load.
+DESIGN_AMBIENT_REF = 30.0
+DESIGN_LOAD_REF = 0.55
+# Compressor power as a share of evaporator duty at the reference point, from
+# the calibrated chiller (34.3 kW on 154 kW). All these machines run at a
+# similar pressure ratio, so one ratio sizes the condenser for all of them.
+DESIGN_W_OVER_Q = 0.2227
+
+DESIGN_POINT: dict[str, dict[str, float]] = {
+    "chiller": {"suction_kpa": 880.0, "discharge_kpa": 2400.0, "leaving_c": 7.0,
+                "superheat": 5.5, "subcool": 4.5},
+    "rtu": {"suction_kpa": 790.0, "discharge_kpa": 2250.0, "leaving_c": 13.0,
+            "superheat": 6.0, "subcool": 5.0},
+    "split_heat_pump": {"suction_kpa": 820.0, "discharge_kpa": 2300.0, "leaving_c": 14.0,
+                        "superheat": 6.5, "subcool": 4.0},
+    "vrf": {"suction_kpa": 810.0, "discharge_kpa": 2320.0, "leaving_c": 13.5,
+            "superheat": 6.2, "subcool": 4.2},
+    # An AHU has no refrigerant circuit. It gets a nominal one so the solver
+    # has something to converge on; its residuals are never used as features.
+    "ahu": {"suction_kpa": 880.0, "discharge_kpa": 2400.0, "leaving_c": 14.0,
+            "superheat": 5.5, "subcool": 4.5},
+}
+
+
 def spec_for_asset(
     asset_type: str, capacity_kw: float, refrigerant: str, air_in_c: float = 24.0
 ) -> TwinSpec:
-    """Scale the design parameters to one machine from the fleet table."""
-    # Displacement and conductances scale with rated capacity; the reference
-    # design above is a ~280 kW chiller.
-    k = max(capacity_kw, 5.0) / 280.0
+    """Build the design parameters for one machine from the fleet table.
+
+    The conductances are *derived* from that family's design point rather than
+    scaled from the chiller, so each type's healthy baseline lands on the
+    pressures the fleet calls healthy for that type:
+
+        UA_evap = Q_ref / (leaving_temp - T_sat(suction_nominal))
+        UA_cond = (Q_ref + W_ref) / (T_sat(discharge_nominal) - ambient_ref)
+    """
     if refrigerant not in ("R32", "R410A"):
-        refrigerant = "R32"  # air-only machines get a nominal circuit
+        refrigerant = "R32"
+    dp = DESIGN_POINT.get(asset_type, DESIGN_POINT["chiller"])
+    cap = max(capacity_kw, 5.0)
+
+    t_evap_design = t_sat(refrigerant, dp["suction_kpa"])
+    t_cond_design = t_sat(refrigerant, dp["discharge_kpa"])
+
+    q_ref = DESIGN_LOAD_REF * cap * 1000.0
+    w_ref = DESIGN_W_OVER_Q * q_ref
+
+    evap_approach = max(dp["leaving_c"] - t_evap_design, 1.0)
+    cond_approach = max(t_cond_design - DESIGN_AMBIENT_REF, 1.0)
+
     return TwinSpec(
         refrigerant=refrigerant,
-        capacity_kw=capacity_kw,
-        displacement_m3_s=0.03653 * k,
-        ua_cond=26_000.0 * k,
-        ua_evap=30_000.0 * k,
+        capacity_kw=cap,
+        # Displacement still scales linearly off the calibrated chiller; the
+        # conductances below are what set the operating point.
+        displacement_m3_s=0.05018 * (cap / 280.0),
+        ua_evap=q_ref / evap_approach,
+        ua_cond=(q_ref + w_ref) / cond_approach,
         air_in_c=air_in_c,
-        # Rooftop and split units run hotter-condensing than a water chiller
-        superheat_sp=6.0 if asset_type in ("rtu", "split_heat_pump", "vrf") else 5.5,
+        chw_supply_sp=dp["leaving_c"],
+        superheat_sp=dp["superheat"],
+        subcool_sp=dp["subcool"],
     )
 
 

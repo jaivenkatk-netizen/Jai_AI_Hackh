@@ -21,7 +21,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 # --------------------------------------------------------------------------
 # Enumerations
@@ -446,27 +446,125 @@ class RecommendationsResponse(BaseModel):
 # --------------------------------------------------------------------------
 
 
+# This section was amended once the twin and the survival model existed, and
+# the amendment is recorded here rather than left as silent drift:
+#
+#   - `horizon_days` was dropped. The horizon is a closed set everywhere else
+#     in this contract (Bucket), and a free integer here would have let one
+#     screen define "urgent" differently from the rest of the app.
+#   - `TwinState` is replaced by `WhatIfTwinView` for this endpoint. The
+#     original required `charge_frac` and `component_health`, which belong to
+#     the asset screen's live state, and lacked the condensing temperature,
+#     duty fraction and control-limit flags the physics twin actually
+#     produces and the panel needs to explain itself.
+#   - `ComponentPrediction` is replaced by `WhatIfComponent`. Bucket migration
+#     is the headline of this endpoint, so each component has to carry its
+#     bucket and its 14-day probability; `failure_mode` is not known at
+#     prediction time and was never populated.
+#   - `parts_delta` is a list of before/after pairs rather than PartsDemandRow,
+#     which is a hub-scoped row with no notion of a scenario comparison.
+
+
 class WhatIfRequest(BaseModel):
+    """A scenario is three condition deltas, and nothing else.
+
+    Deliberately narrow: there is no field here that can move a prediction
+    directly. The only way to change the answer is to change the weather, the
+    load or the running hours, and let the model respond to that.
+    """
+
+    # Unknown fields are an error, not something to ignore. Every delta
+    # defaults to zero, so a misspelled field name would otherwise return a
+    # confident baseline instead of a complaint - the worst failure a
+    # what-if endpoint can have.
+    model_config = ConfigDict(extra="forbid")
+
     asset_id: str
     d_ambient_c: float = Field(0, ge=-15, le=15, description="Ambient shift, degrees C")
     d_load_frac: float = Field(0, ge=-0.5, le=0.5, description="Load shift, fraction")
-    d_duty_hours: float = Field(0, ge=-8, le=8, description="Duty-cycle shift, h/day")
-    horizon_days: int = Field(90, ge=14, le=365)
+    d_duty_hours: float = Field(0, ge=-12, le=12, description="Duty-cycle shift, h/day")
+    preset: str | None = Field(None, description="Named preset; overrides the three deltas")
+
+
+class WhatIfSignal(BaseModel):
+    """One telemetry channel against the twin's healthy baseline."""
+
+    observed: float
+    healthy: float
+    residual: float
+
+
+class WhatIfTwinView(BaseModel):
+    """Twin state under one set of conditions."""
+
+    ambient_c: float
+    load_frac: float
+    t_evap_c: float
+    t_cond_c: float
+    suction_p_kpa: float
+    discharge_p_kpa: float
+    superheat_k: float
+    subcool_k: float
+    comp_current_a: float
+    cop: float = Field(..., description="Plant COP, including auxiliaries")
+    cop_compressor: float = Field(..., description="Compressor-only cycle COP")
+    capacity_kw: float
+    pressure_ratio: float
+    duty_frac: float = Field(..., ge=0, le=1, description="1.0 modulating; below that, cycling")
+    cycling: bool = Field(..., description="Running below the compressor unloading floor")
+    head_pressure_limited: bool = Field(..., description="Minimum-condensing control is holding")
+    converged: bool
+    signals: dict[str, WhatIfSignal] = Field(default_factory=dict)
+
+
+class WhatIfComponent(BaseModel):
+    """One component's band and bucket under one scenario."""
+
+    component_id: str
+    component_type: str
+    criticality: Criticality
+    p10_days: float
+    p50_days: float
+    p90_days: float
+    p_fail_14d: float = Field(..., ge=0, le=1)
+    p_fail_90d: float = Field(..., ge=0, le=1)
+    bucket: Bucket
+
+
+class WhatIfPartDelta(BaseModel):
+    part_no: str
+    p90_before: float
+    p90_after: float
+    delta: float
 
 
 class WhatIfResponse(BaseModel):
     asset_id: str
+    asset_label: str
+    asset_type: str
+    site_name: str
+    hub_id: str
     scenario_label: str
-    twin_before: TwinState
-    twin_after: TwinState
-    components_before: list[ComponentPrediction]
-    components_after: list[ComponentPrediction]
-    parts_delta: list[PartsDemandRow] = Field(
-        default_factory=list, description="Change in this asset's parts demand"
-    )
+    d_ambient: float
+    d_load: float
+    d_duty: float
+    preset: str | None = None
+    twin_before: WhatIfTwinView
+    twin_after: WhatIfTwinView
+    components_before: list[WhatIfComponent]
+    components_after: list[WhatIfComponent]
+    bucket_counts_before: dict[str, int] = Field(default_factory=dict)
+    bucket_counts_after: dict[str, int] = Field(default_factory=dict)
     bucket_migration: dict[str, int] = Field(
         default_factory=dict,
-        description="Components moving between buckets, e.g. {'planned->urgent': 2}",
+        description="Components moving between buckets, e.g. {'planned -> urgent': 2}",
+    )
+    moved_component_ids: list[str] = Field(default_factory=list)
+    parts_delta: list[WhatIfPartDelta] = Field(
+        default_factory=list, description="Change in this asset's own urgent parts demand"
+    )
+    assumptions: list[str] = Field(
+        default_factory=list, description="What the scenario holds fixed, in plain words"
     )
     compute_ms: float
 
@@ -579,6 +677,10 @@ __all__ = [
     "RecommendationsResponse",
     "WhatIfRequest",
     "WhatIfResponse",
+    "WhatIfTwinView",
+    "WhatIfSignal",
+    "WhatIfComponent",
+    "WhatIfPartDelta",
     "PolicyKpiRow",
     "PolicyKpiResponse",
     "ToolCallTrace",

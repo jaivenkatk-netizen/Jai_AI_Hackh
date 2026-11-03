@@ -48,7 +48,8 @@ from scipy.stats import norm  # noqa: E402
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from contracts.schemas import Bucket
+from api.whatif import PRESETS, WhatIfEngine, run_whatif  # noqa: E402
+from contracts.schemas import Bucket, WhatIfRequest, WhatIfResponse
 
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get("SERVICESENSE_DB", ROOT / "data" / "servicesense.duckdb"))
@@ -57,6 +58,7 @@ DB_PATH = Path(os.environ.get("SERVICESENSE_DB", ROOT / "data" / "servicesense.d
 REPLAY_SPEED = float(os.environ.get("SERVICESENSE_REPLAY_SPEED", "60"))
 
 _con: duckdb.DuckDBPyConnection | None = None
+_whatif: WhatIfEngine | None = None
 
 
 def db() -> duckdb.DuckDBPyConnection:
@@ -73,9 +75,25 @@ async def lifespan(app: FastAPI):
             f"{DB_PATH} not found - run `python -m pipeline.build_all` first"
         )
     _con = duckdb.connect(str(DB_PATH), read_only=True)
+    global _whatif
+    # Load the booster once at startup, not per request: a cold load is ~900 ms
+    # and the what-if slider is meant to feel immediate.
+    try:
+        _whatif = WhatIfEngine()
+        # Warm the whole path, not just the booster: the first run also pays
+        # CoolProp's fluid load, scipy's solver import and DuckDB's first
+        # touch of the repair-kit tables. Doing it here costs ~1.7 s at
+        # startup and makes the first slider drag as fast as the rest.
+        warm_id = _con.execute("SELECT asset_id FROM score_snapshots LIMIT 1").fetchone()
+        if warm_id:
+            run_whatif(_con.cursor(), _whatif, warm_id[0], d_ambient=1.0)
+    except Exception as exc:  # the rest of the API is still fully usable
+        print(f"what-if unavailable ({exc}); other endpoints unaffected")
+        _whatif = None
     yield
     _con.close()
     _con = None
+    _whatif = None
 
 
 app = FastAPI(title="ServiceSense API", version="0.1.0", lifespan=lifespan)
@@ -733,6 +751,43 @@ async def ws_telemetry(ws: WebSocket, speed: float = REPLAY_SPEED) -> None:
             await ws.send_json({"type": "error", "message": str(exc)})
         except Exception:
             pass
+
+
+@app.get("/api/whatif/presets")
+def whatif_presets() -> dict:
+    return {"presets": [{"name": k, **v} for k, v in PRESETS.items()]}
+
+
+@app.post("/api/whatif")
+def post_whatif(req: WhatIfRequest) -> dict:
+    """Re-score one asset under shifted operating conditions.
+
+    The only endpoint that runs the model inside a request. Everything else is
+    a SELECT against a precomputed table, which is what keeps the demo fast;
+    this one is narrow enough (one asset, a dozen components) to afford it.
+    """
+    if _whatif is None:
+        raise HTTPException(503, "what-if engine unavailable - model artifact missing")
+    d = {
+        "d_ambient": req.d_ambient_c,
+        "d_load": req.d_load_frac,
+        "d_duty": req.d_duty_hours,
+    }
+    if req.preset:
+        if req.preset not in PRESETS:
+            raise HTTPException(422, f"unknown preset {req.preset!r}")
+        d = dict(PRESETS[req.preset])
+    con = db()
+    try:
+        out = run_whatif(con, _whatif, req.asset_id, **d)
+    except KeyError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if req.preset:
+        out["preset"] = req.preset
+    # Validate against the frozen contract on the way out. This is the one
+    # endpoint that builds its payload by hand rather than from a table, so
+    # it is the one most able to drift from the schema the UI is typed against.
+    return _clean(WhatIfResponse.model_validate(out).model_dump())
 
 
 @app.get("/api/health")
