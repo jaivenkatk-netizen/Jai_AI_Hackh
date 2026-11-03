@@ -38,6 +38,44 @@ python -m models.survival_xgb --evaluate
 #    matter most, so this table is not optional.
 ```
 
+## One thing we tried that did not work
+
+The asset twin (`sim/asset_twin.py`) was built to supply a residual feature:
+`observed - healthy(conditions)` should isolate degradation from the weather,
+and so correlate more with damage and less with ambient than the raw channel.
+
+It does not, on this data, and the check is in the repo rather than the claim:
+
+```powershell
+python -m sim.twin_residual_check --n 1200          # and --asset-type rtu, vrf, ...
+```
+
+| signal | r(ambient) raw -> residual | r(damage) raw -> residual |
+|---|---|---|
+| discharge_p | +0.72 -> **-0.87** | +0.45 -> **+0.22** |
+| suction_p | +0.09 -> **+0.53** | -0.44 -> **-0.35** |
+| superheat | -0.00 -> -0.00 | +0.42 -> +0.42 |
+| subcool | +0.04 -> +0.04 | +0.45 -> +0.45 |
+
+0 of 4 signals improve, on all four machine families. The reason is a
+property of the data, not of the method: the synthetic fleet's head pressure
+moves 26 kPa per K of ambient, while R32 saturation physics - which is what
+the twin computes - moves about 60 kPa/K. Subtracting a 60 kPa/K model from a
+26 kPa/K signal over-corrects, so the residual carries *more* weather than
+the raw channel, with the sign flipped. Superheat and subcool sit at fixed
+setpoints in the twin, so their residual is the raw signal minus a constant,
+and a tree ensemble is invariant to that.
+
+So the twin is **not** a model feature here. It earns its place driving the
+what-if panel and the asset screen's healthy baseline, where a physically
+correct answer to "what would a sound machine read in this weather" is
+exactly what is wanted. Against real telemetry, where head pressure does
+follow saturation, the residual would remove a real confounder - but that is
+a claim about other data, so it is not made as a result of this one.
+
+The honest consequence: the three planted hero compressors are still
+mispredicted, and the twin residual was the intended fix for them.
+
 ## Layout
 
 | Path | What it is |
