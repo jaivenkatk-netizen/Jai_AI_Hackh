@@ -33,7 +33,10 @@ Start-Process -FilePath ".\.venv\Scripts\python.exe" `
 
 Write-Host "Starting web on :5173..." -ForegroundColor Cyan
 Push-Location web
-Start-Process -FilePath "npm" -ArgumentList "run","dev" -WindowStyle Hidden `
+# npm on Windows is npm.cmd, a batch file. Start-Process cannot launch it
+# directly ("%1 is not a valid Win32 application") because CreateProcess only
+# runs real executables, so it goes through cmd.exe.
+Start-Process -FilePath "cmd.exe" -ArgumentList "/c","npm run dev" -WindowStyle Hidden `
   -RedirectStandardOutput "..\data\_vite.log" -RedirectStandardError "..\data\_vite.err"
 Pop-Location
 
