@@ -28,12 +28,10 @@ dependencies = [
     "python-dotenv>=1.0",
     # copilot
     "anthropic>=0.40",
+    # physics twin - wheels available for 3.12, verified against textbook
+    # saturation pressures (R32 Psat(40C)=2478 kPa, R410A=2426 kPa)
+    "CoolProp>=6.6",
 ]
-
-[project.optional-dependencies]
-# Physics twin. Isolated because CoolProp is the one package likely to need a
-# source build on Windows; sim/refrig_props.py is the fallback if it fails.
-twin = ["CoolProp>=6.6"]
 
 [tool.uv]
 package = false
