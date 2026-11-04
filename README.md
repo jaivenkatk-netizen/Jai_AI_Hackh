@@ -219,3 +219,28 @@ To publish or refresh that release:
 It is idempotent — re-running replaces the assets on an existing tag rather
 than failing — and refuses early with a clear message if `gh` is not
 authenticated or the artefacts have not been built yet.
+
+## Copilot (multi-agent chat)
+
+The **Copilot** tab is a chat over a small team of agents (`copilot/`):
+
+```
+question -> Orchestrator -> Risk Analyst / Parts Planner / Logistics / Validation
+                         -> Synthesizer -> Auditor (every number checked against a tool result)
+```
+
+Agents only call read-only SQL tools over the same DuckDB the dashboard reads,
+and the whole workflow streams to the UI (`POST /api/copilot`, SSE), so each
+answer shows which agents ran, which tools they called, and whether the auditor
+could tie every number to a tool result.
+
+- With `ANTHROPIC_API_KEY` set, each agent is a Claude call (`COPILOT_MODEL`,
+  default `claude-opus-5-5`) with its own tool subset.
+- Without a key it runs a deterministic router and templated writer over the
+  same tools. That mode is rule-based, not a language model, and the UI says so.
+
+## Real-world evidence
+
+The **Real-world Evidence** tab checks the method on public data
+(ASHRAE RP-1043, LBNL chiller plant, NASA IMS bearings). Rebuild from the raw
+archives in `data/raw` with `python -m sim.real_data` (about 20 minutes).

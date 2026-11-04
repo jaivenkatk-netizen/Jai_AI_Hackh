@@ -408,7 +408,52 @@ const post = async <T>(path: string, body: unknown): Promise<T> => {
   return (await r.json()) as T;
 };
 
+export interface EvidenceResponse {
+  ashrae: {
+    signals: string[];
+    faults: {
+      fault: string;
+      levels: { severity: number; runs: number; kwton_pct: number | null; z: Record<string, number | null> }[];
+    }[];
+    baseline_sd_pct: number;
+    normal_states: number;
+    steady_states: number;
+    runs: number;
+  } | null;
+  lbnl: {
+    baseline_plant_kw: number;
+    baseline_days: number;
+    scenarios: {
+      scenario: string;
+      component: string;
+      fault: string;
+      level: number | null;
+      days: number;
+      plant_kw: number;
+      energy_penalty_pct: number | null;
+      load_ratio: number | null;
+      comparable: boolean;
+      ct_approach_delta: number | null;
+      dp_err_delta: number | null;
+    }[];
+  } | null;
+  ims: {
+    summary: {
+      test: number;
+      failure_mode: string;
+      files: number;
+      life_days: number;
+      lead_time_days: number | null;
+      lead_pct_of_life: number | null;
+      rank_corr_hi_vs_rul: number;
+      rank_corr_last_half: number;
+    }[];
+    series: { test: number; hours: number; rul_h: number; hi: number; hi_kurt: number; alarm_threshold: number }[];
+  } | null;
+}
+
 export const api = {
+  evidence: () => get<EvidenceResponse>("/evidence"),
   whatif: (s: WhatIfScenario) => post<WhatIfResponse>("/whatif", s),
   kpis: (hub?: string) => get<KpiResponse>(`/kpis${qs({ hub })}`),
   fleet: (hub?: string, bucket?: Bucket, limit = 300) =>
