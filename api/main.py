@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
     _whatif = None
 
 
-app = FastAPI(title="ServiceSense API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Orbit API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],

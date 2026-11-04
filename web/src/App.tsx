@@ -39,7 +39,7 @@ export default function App() {
       >
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-baseline gap-2">
-            <span className="text-[14px] font-semibold tracking-tight">ServiceSense</span>
+            <span className="text-[14px] font-semibold tracking-tight">Orbit</span>
             <span className="text-[11px]" style={{ color: "var(--muted)" }}>
               A01 &middot; maintenance to inventory
             </span>
