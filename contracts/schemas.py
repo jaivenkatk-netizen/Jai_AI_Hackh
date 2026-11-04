@@ -1,4 +1,4 @@
-"""ServiceSense API contract.
+"""Orbit API contract.
 
 This module is the single source of truth for every shape that crosses the
 API boundary. The React app is built against fixtures generated from these

@@ -58,6 +58,9 @@ TABLES = [
     "parts_demand", "parts_demand_contrib", "stock_positions", "recommendations",
     "asset_features", "score_snapshots",
     "pdm_machines", "pdm_lives", "pdm_daily", "pdm_train",
+    # Real-world evidence (sim/real_data.py). Not a default STAGE: building it
+    # needs the multi-GB raw archives, so the compact outputs are committed.
+    "evidence_ashrae", "evidence_lbnl", "evidence_ims_series", "evidence_ims_summary",
 ]
 
 # Views the API leans on, defined once here so the endpoints stay trivial.

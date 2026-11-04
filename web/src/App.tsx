@@ -6,15 +6,19 @@ import { useState } from "react";
 
 import AssetTwin from "./screens/AssetTwin";
 import CommandCenter from "./screens/CommandCenter";
+import Copilot from "./screens/Copilot";
 import InventoryPlanner from "./screens/InventoryPlanner";
+import Evidence from "./screens/Evidence";
 import PartsDemand from "./screens/PartsDemand";
 
-type Screen = "command" | "parts" | "planner" | "asset";
+type Screen = "command" | "parts" | "planner" | "evidence" | "copilot" | "asset";
 
 const NAV: { key: Screen; label: string; hint: string }[] = [
   { key: "command", label: "Command Center", hint: "Fleet state and the urgent queue" },
   { key: "parts", label: "Parts Demand", hint: "Failures translated into part numbers" },
   { key: "planner", label: "Inventory Planner", hint: "Shortages turned into approvable actions" },
+  { key: "copilot", label: "Copilot", hint: "Ask a team of agents; every number is checked against a tool result" },
+  { key: "evidence", label: "Real-world Evidence", hint: "The method checked on public ASHRAE, LBNL and NASA IMS data" },
 ];
 
 export default function App() {
@@ -35,7 +39,7 @@ export default function App() {
       >
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center gap-x-4 gap-y-2">
           <div className="flex items-baseline gap-2">
-            <span className="text-[14px] font-semibold tracking-tight">ServiceSense</span>
+            <span className="text-[14px] font-semibold tracking-tight">Orbit</span>
             <span className="text-[11px]" style={{ color: "var(--muted)" }}>
               A01 &middot; maintenance to inventory
             </span>
@@ -80,6 +84,8 @@ export default function App() {
         )}
         {screen === "parts" && <PartsDemand hub={hub} setHub={setHub} onOpenAsset={openAsset} />}
         {screen === "planner" && <InventoryPlanner hub={hub} setHub={setHub} />}
+        {screen === "copilot" && <Copilot hub={hub} assetId={assetId} />}
+        {screen === "evidence" && <Evidence />}
         {screen === "asset" && assetId && (
           <AssetTwin assetId={assetId} onBack={() => setScreen("command")} />
         )}

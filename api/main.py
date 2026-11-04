@@ -47,9 +47,12 @@ import pandas as pd  # noqa: E402
 from scipy.stats import norm  # noqa: E402
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from api.whatif import PRESETS, WhatIfEngine, run_whatif  # noqa: E402
-from contracts.schemas import Bucket, WhatIfRequest, WhatIfResponse
+from copilot.tools import ToolBox  # noqa: E402
+from copilot.workflow import engine_status, run_workflow  # noqa: E402
+from contracts.schemas import Bucket, CopilotRequest, WhatIfRequest, WhatIfResponse
 
 ROOT = Path(__file__).resolve().parents[1]
 DB_PATH = Path(os.environ.get("SERVICESENSE_DB", ROOT / "data" / "servicesense.duckdb"))
@@ -96,7 +99,7 @@ async def lifespan(app: FastAPI):
     _whatif = None
 
 
-app = FastAPI(title="ServiceSense API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Orbit API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -847,6 +850,145 @@ def post_whatif(req: WhatIfRequest) -> dict:
     # endpoint that builds its payload by hand rather than from a table, so
     # it is the one most able to drift from the schema the UI is typed against.
     return _clean(WhatIfResponse.model_validate(out).model_dump())
+
+
+# --------------------------------------------------------------------------
+# Real-world evidence (ASHRAE RP-1043, LBNL chiller plant, NASA IMS bearings)
+# --------------------------------------------------------------------------
+
+
+def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
+    return bool(con.execute(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = ?", [name]
+    ).fetchone()[0])
+
+
+@app.get("/api/evidence")
+def get_evidence() -> dict:
+    """Independent checks of the method on public data we did not generate.
+
+    Each block is absent (null) when its table has not been loaded, so the
+    screen can say which source is missing instead of failing.
+    """
+    con = db()
+    out: dict[str, Any] = {"ashrae": None, "lbnl": None, "ims": None}
+
+    if _table_exists(con, "evidence_ashrae"):
+        sig = ["kW/Ton", "TRC_sub", "Tsh_suc", "Tsh_dis", "PRC", "PRE", "TCA", "TEA"]
+        d = con.execute("SELECT * FROM evidence_ashrae").df()
+        faults = []
+        for fault, g in d[d.fault != "Normal"].groupby("fault"):
+            levels = []
+            for sev, h in g.groupby("severity"):
+                levels.append({
+                    "severity": _clean(sev),
+                    "runs": int(h.file.nunique()),
+                    "kwton_pct": _clean(h.kwton_residual_pct.mean()),
+                    "z": {s: _clean(h[f"{s}_z"].mean()) for s in sig},
+                })
+            faults.append({"fault": fault, "levels": levels})
+        out["ashrae"] = {
+            "signals": sig,
+            "faults": faults,
+            "baseline_sd_pct": _clean(d.baseline_resid_sd_pct.iloc[0]),
+            "normal_states": int((d.fault == "Normal").sum()),
+            "steady_states": int(len(d)),
+            "runs": int(d.file.nunique()),
+        }
+
+    if _table_exists(con, "evidence_lbnl"):
+        d = con.execute("SELECT * FROM evidence_lbnl").df()
+        # Only days with real cooling demand: on idle winter days the load is ~0
+        # and power-per-load is meaningless. Each scenario is its own stochastic
+        # simulated year, so a scenario is only comparable with the fault-free
+        # year when it served about the same total cooling load.
+        d = d[d.load > 20000]
+
+        def agg(g: pd.DataFrame) -> dict:
+            return {"kw": g.plant_kw.sum(), "ld": g.load.sum(), "n": len(g),
+                    "ct": g.ct_approach.mean(), "dp": g.dp_err.mean(), "mean_kw": g.plant_kw.mean()}
+
+        base = agg(d[d.scenario == "fault_free"])
+        b_eff = base["kw"] / base["ld"]
+        scen = []
+        for sc, g in d.groupby("scenario"):
+            if sc == "fault_free":
+                continue
+            a = agg(g)
+            ratio = a["ld"] / base["ld"]
+            scen.append({
+                "scenario": sc,
+                "component": g.component.iloc[0],
+                "fault": g.fault.iloc[0],
+                "level": _clean(g.level.iloc[0]),
+                "days": int(a["n"]),
+                "plant_kw": _clean(a["mean_kw"]),
+                "energy_penalty_pct": _clean(100 * ((a["kw"] / a["ld"]) / b_eff - 1)),
+                "load_ratio": _clean(ratio),
+                "comparable": bool(abs(ratio - 1) < 0.02),
+                "ct_approach_delta": _clean(a["ct"] - base["ct"]),
+                "dp_err_delta": _clean(a["dp"] - base["dp"]),
+            })
+        scen.sort(key=lambda r: (not r["comparable"], -abs(r["energy_penalty_pct"] or 0)))
+        out["lbnl"] = {
+            "baseline_plant_kw": _clean(base["mean_kw"]),
+            "baseline_days": int(base["n"]),
+            "scenarios": scen,
+        }
+
+    if _table_exists(con, "evidence_ims_summary"):
+        out["ims"] = {
+            "summary": rows(con.execute("SELECT * FROM evidence_ims_summary ORDER BY test").df()),
+            "series": rows(con.execute(
+                "SELECT test, hours, rul_h, hi, hi_kurt, alarm_threshold "
+                "FROM evidence_ims_series ORDER BY test, hours").df()),
+        }
+    return out
+
+
+# --------------------------------------------------------------------------
+# Copilot: multi-agent workflow over the same read-only tools, streamed as SSE
+# --------------------------------------------------------------------------
+
+
+@app.get("/api/copilot/status")
+def copilot_status() -> dict:
+    return engine_status()
+
+
+@app.post("/api/copilot")
+def post_copilot(req: CopilotRequest) -> StreamingResponse:
+    """Stream the workflow: plan, each agent's tool calls and findings, the audit, the answer.
+
+    One SSE `data:` frame per event. The generator runs in a threadpool, so the
+    DuckDB cursor is created inside it rather than shared across requests.
+    """
+    msg = req.message.strip()
+    if not msg:
+        raise HTTPException(422, "message is empty")
+    if len(msg) > 1000:
+        raise HTTPException(422, "message too long")
+
+    def whatif_fn(asset_id: str, d_ambient: float = 0.0, d_load: float = 0.0) -> dict:
+        if _whatif is None:
+            raise RuntimeError("what-if engine unavailable")
+        return run_whatif(db(), _whatif, asset_id, d_ambient=d_ambient, d_load=d_load)
+
+    def sse(ev: dict) -> str:
+        # One Server-Sent-Events frame: "data: <json>" plus a blank line.
+        return "data: " + json.dumps(ev, default=str) + chr(10) + chr(10)
+
+    def gen():
+        box = ToolBox(db(), whatif=whatif_fn)
+        try:
+            for ev in run_workflow(box, msg, req.context):
+                yield sse(ev)
+        except Exception as exc:  # never leave the client hanging on a half-open stream
+            yield sse({"type": "error", "text": str(exc)})
+            yield sse({"type": "done", "grounded": False})
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 @app.get("/api/health")
